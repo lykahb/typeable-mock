@@ -22,26 +22,27 @@ description:         Please see the README on GitHub at <https://github.com/gith
 dependencies:
 - base >= 4.7 && < 5
 - containers
+- call-stack >= 0.2.0
 
 default-extensions:
+- DerivingStrategies
 - GADTs
 - GeneralizedNewtypeDeriving
+- ImportQualifiedPost
+- LambdaCase
 - RankNTypes
 - ScopedTypeVariables
+- TypeApplications
+- TypeOperators
+
+ghc-options:
+- -Wall
+# - -Wno-missing-import-lists
+# - -Wno-prepositive-qualified-module
+# - -Wno-unsafe
 
 library:
   source-dirs: src
-
-executables:
-  mock-typeable-exe:
-    main:                Main.hs
-    source-dirs:         app
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - mock-typeable
 
 tests:
   mock-typeable-test:
@@ -53,3 +54,4 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - mock-typeable
+    - hspec

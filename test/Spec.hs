@@ -1,24 +1,84 @@
-import Control.Monad (void)
+import Control.Monad.IO.Class (MonadIO (..))
 import Data.Maybe (fromMaybe)
+import Data.Typeable (Typeable)
+import Test.Hspec
 import TypeableMock
 
-functionCallingMock mocks = do
-  fromMaybe print (useMockM1 mocks "print") "some string"
-
 main :: IO ()
-main = do
-  m1 <- makeMock "print" $ mockM1 ((\arg -> void $ print ("mocked " <> arg)) :: String -> IO ())
-  m2 <- makeMock "myPrint" $ mockM1 ((\arg -> void $ print ("mocked myPrint with string " <> arg)) :: String -> IO ())
-  m3 <- makeMock "myPrint" $ mockM1 ((\arg -> print ("mocked myPrint with int " <> show arg)) :: (Int, Int) -> IO ())
-  m4 <- makeMock "myPrint2" $ mockM2 ((\_ _ -> putStrLn "mocking two arg function" >> pure ()) :: Int -> Int -> IO ())
+main = hspec $ do
+  let runWithMock :: (Show a, Typeable a) => MockConfig IO -> a -> IO ()
+      runWithMock mocks a = fromMaybe print (useMockM1 mocks "print") a
+  printStringMock <- runIO $ makeMock "print" $ mockM1 (const $ pure () :: String -> IO ())
+  let mockConf = mocksToConfig [printStringMock]
 
-  functionCallingMock (mocksToConfig [m1, m2, m3, m4])
+  describe "Mock" $ before_ (resetCallRecords printStringMock) $ do
+    it "mocks a single argument function" $ do
+      runWithMock mockConf "some string"
+      assertHasCalls printStringMock [call "some string"]
 
-  checkCalls m1 [ExpectedArg ("some string" :: String)]
-  -- checkCalls m2 [ExpectedArg ("string" :: String)]
-  -- checkCalls m3 [ExpectedArg (1 :: Int, 2 :: Int)]
-  -- checkCalls m4 [(1 :: Int, 2 :: Int), (3, 4)]
+    it "mocks a multiple arguments function" $ do
+      let print2 :: Int -> Int -> IO ()
+          print2 a b = print (a, b)
+      let myfunc mocks = do
+            fromMaybe print2 (useMockM2 mocks "print2") 1 2
+      print2Mock <- makeMock "print2" $ mockM2 ((\_ _ -> pure ()) :: Int -> Int -> IO ())
 
--- checkCalls m4 [(1 :: Int, 2 :: Int)]  -- Exception: user error (Mock myPrint2 has unexpected calls: [["3","4"]])
--- checkCalls m4 ([] :: [ExpectedArg])  -- Exception: user error (Mock myPrint2 has unexpected calls: 2 calls)
+      myfunc $ mocksToConfig [print2Mock]
+      assertHasCalls print2Mock [call (1 :: Int) (2 :: Int)]
+    
+    it "mocks multiple calls" $ do
+      runWithMock mockConf "some string"
+      runWithMock mockConf "another string"
+      assertHasCalls printStringMock [
+        call "some string",
+        call "another string"
+        ]
 
+    it "can dispatch mocks with the same name and different types" $ do
+      printIntMock <- makeMock "print" $ mockM1 (const $ pure () :: Int -> IO ())
+      let mockConf' = mockConf <> mocksToConfig [printIntMock]
+      runWithMock mockConf' "some string"
+      runWithMock mockConf' (1 :: Int)
+      assertHasCalls printStringMock [call "some string"]
+      assertHasCalls printIntMock [call (1 :: Int)]
+
+    it "fails when there are more calls than expected" $ do
+      runWithMock mockConf "some string"
+      runWithMock mockConf "another string"
+      assertHasCalls printStringMock [call "some string"] `shouldThrow` \(MockFailure _ reason) ->
+          case reason of MockFailureUnexpectedCall _ -> True; _ -> False
+    
+    it "fails when there are fewer calls than expected" $ do
+      runWithMock mockConf "some string"
+      assertHasCalls printStringMock [
+        call "some string",
+        call "another string"
+        ] `shouldThrow` \(MockFailure _ reason) ->
+          case reason of MockFailureNotCalled _ -> True; _ -> False
+    
+    it "fails when a call is with unexpected arguments" $ do
+      runWithMock mockConf "some string"
+      assertHasCalls printStringMock [call "another string"] `shouldThrow` \case
+        MockFailure _ (MockFailureArgumentValueMismatch _ _) -> True
+        _ -> False
+    
+    it "ignores expected argument when it is unit" $ do
+      runWithMock mockConf "some string"
+      assertHasCalls printStringMock [call ()]
+    
+    it "works inside of a polymorphic monad" $ do
+      -- Polymorphic types cannot be used with Typeable typeOf. This library has a workaround for monads.
+      let printInMonad :: MonadIO m => MockConfig m -> String -> m ()
+          printInMonad mocks s = do
+            fromMaybe (liftIO . print) (useMockM1 mocks "print") s
+      printInMonad mockConf "some string"
+      assertHasCalls printStringMock [call "some string"]
+      
+    describe "assertNotCalled" $ do
+      it "succeeds when mock was not called" $ do
+        assertNotCalled printStringMock
+
+      it "fails when mock was called" $ do
+        runWithMock mockConf "some string"
+        assertNotCalled printStringMock `shouldThrow` \(MockFailure _ reason) ->
+            case reason of MockFailureUnexpectedCall _ -> True; _ -> False

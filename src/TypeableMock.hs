@@ -1,16 +1,16 @@
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE TypeOperators #-}
-
 module TypeableMock
   ( Mock (..),
     MockConfig (..),
     CallRecord (..),
-    ExpectedArg (..),
-    ExpectedArgs (..),
+    MockFailure (..),
+    MockFailureReason (..),
     MockValue (..),
     makeMock,
     mocksToConfig,
-    checkCalls,
+    assertHasCalls,
+    assertNotCalled,
+    call,
+    resetCallRecords,
     mockM0,
     mockM1,
     mockM2,
@@ -23,30 +23,27 @@ module TypeableMock
   )
 where
 
-import Control.Monad (MonadFail (fail), unless, when)
-import Control.Monad.IO.Class
+import Control.Exception (Exception, throwIO)
+import Control.Monad (forM_, unless, when)
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Data.CallStack (HasCallStack, SrcLoc, callStack)
+import Data.IORef (IORef, modifyIORef, newIORef, readIORef, writeIORef)
 import Data.List (intercalate)
 import Data.Map (Map)
-import Data.Maybe (catMaybes)
 import qualified Data.Map as Map
-import Data.Typeable
-import Data.IORef
+import Data.Typeable (Proxy (Proxy), TypeRep, Typeable, cast, eqT, gcast, typeOf, typeRep, (:~:) (Refl))
+import Prelude
 
 newtype CallRecord = CallRecord [Arg]
 
--- deriving Show
--- deriving (Eq, Show)
-
 data Arg = forall a. Typeable a => Arg a
-
--- class CombineConstraints a b
-
--- deriving instance Eq Arg
--- deriving instance Show Arg
 
 data MockMonadTR a
 
 data Mock m = Mock String (IORef [CallRecord]) (MockValue m)
+
+instance Show (Mock m) where
+  show (Mock key _ _) = "Mock " <> key
 
 type WithCallRecord a = IORef [CallRecord] -> a
 
@@ -60,12 +57,31 @@ data MockValue m
   | forall x a b c. (Typeable x, Typeable a, Typeable b, Typeable c) => MonadicMock3 (WithCallRecord (a -> b -> c -> m x))
 
 newtype MockConfig m = MockConfig (Map String (Map TypeRep (Mock m)))
-  deriving (Monoid, Semigroup)
+  deriving newtype (Monoid, Show)
 
--- makeMockPure :: (MonadIO m, Coercible mock orig, Typeable orig, Typeable mock) => orig -> mock -> m Mock
--- makeMockPure orig mock = do
---   callRecord <- liftIO $ newIORef []
---   pure $ Mock callRecord (PureMock mock)
+instance Semigroup (MockConfig m) where
+  -- The Semigroup operation for Map is union, which prefers values from the left operand. We need a union of operands instead.
+  MockConfig a <> MockConfig b = MockConfig $ Map.unionWith (<>) a b
+
+data MockFailure = MockFailure (Maybe SrcLoc) MockFailureReason
+
+instance Show MockFailure where
+  show (MockFailure loc reason) = intercalate "\n" [show loc, show reason]
+
+data MockFailureReason
+  = MockFailureArgumentTypeMismatch ExpectedArg Arg
+  | forall a. Show a => MockFailureArgumentValueMismatch a a
+  | MockFailureUnexpectedCall CallRecord
+  | MockFailureNotCalled CallWithArgs
+
+instance Show MockFailureReason where
+  show reason = intercalate "\n" $ case reason of
+    MockFailureArgumentValueMismatch expected actual -> ["expected: " ++ show expected, " but got: " ++ show actual]
+    MockFailureArgumentTypeMismatch (ExpectedArg expected) (Arg actual) -> ["expected: " ++ show expected, " but got value of different type: " ++ show (typeOf actual)]
+    MockFailureUnexpectedCall (CallRecord _) -> ["TODO"]
+    MockFailureNotCalled (CallWithArgs args) -> ["expected call with arguments: " ++ show args, "but was not called"]
+
+instance Exception MockFailure
 
 -- | This allows us get a TypeRep even though the monad in MonadicMockX does not have `Typeable m`
 mockValueTypeRep :: MockValue m -> TypeRep
@@ -95,7 +111,10 @@ mockM3 :: (MonadIO m, Typeable x, Typeable a, Typeable b, Typeable c) => (a -> b
 mockM3 f = MonadicMock3 $ \calls a b c -> addCallRecord calls [Arg a, Arg b, Arg c] >> f a b c
 
 addCallRecord :: MonadIO m => IORef [CallRecord] -> [Arg] -> m ()
-addCallRecord callRecords args = liftIO (modifyIORef callRecords (CallRecord args :))
+addCallRecord callsRef args = liftIO $ modifyIORef callsRef (CallRecord args :)
+
+resetCallRecords :: Mock mc -> IO ()
+resetCallRecords (Mock _ callsRef _) = writeIORef callsRef []
 
 lookupMock :: MockConfig mc -> String -> TypeRep -> Maybe (Mock mc)
 lookupMock (MockConfig mocks) key tRep = do
@@ -178,54 +197,50 @@ mocksToConfig mocks = MockConfig mockMap
 
 data ExpectedArg = forall a. (Typeable a, Show a, Eq a) => ExpectedArg a
 
+newtype CallWithArgs = CallWithArgs {unCallWithArgs :: [ExpectedArg]}
+  deriving stock (Show)
+
 instance Show ExpectedArg where
   show (ExpectedArg a) = show a
 
-class Show a => ExpectedArgs a where
-  toDynArgs :: a -> [ExpectedArg]
+class CalledWith res where
+  calledWith :: [ExpectedArg] -> res
 
-instance ExpectedArgs ExpectedArg where
-  toDynArgs arg = [arg]
+instance CalledWith CallWithArgs where
+  calledWith = CallWithArgs . reverse
 
-instance (Typeable a, Show a, Eq a, Typeable b, Show b, Eq b) => ExpectedArgs (a, b) where
-  toDynArgs (a, b) = [ExpectedArg a, ExpectedArg b]
+instance (Typeable a, Show a, Eq a, CalledWith res) => CalledWith (a -> res) where
+  calledWith args arg = calledWith (ExpectedArg arg : args)
 
-instance (Typeable a, Show a, Eq a, Typeable b, Show b, Eq b, Typeable c, Show c, Eq c) => ExpectedArgs (a, b, c) where
-  toDynArgs (a, b, c) = [ExpectedArg a, ExpectedArg b, ExpectedArg c]
+call :: CalledWith res => res
+call = calledWith []
 
-checkCallRecord :: (MonadFail m, ExpectedArgs args) => CallRecord -> args -> m ()
-checkCallRecord (CallRecord actual) expected = do
-  result <- combineArgs actual (toDynArgs expected)
-  let toError idx argComparison = case argComparison of
-        Left (_, t2) | t2 == typeOf () -> Nothing -- () means that we ignore that argument
-        Left (t1, t2) -> Just $ "Types of argument " <> show idx <> " do not match: " <> show t1 <> " and " <> show t2
-        Right (False, val1, val2) -> Just $ "Argument " <> show idx <> " does not match: expected " <> show val2 <> " actual " <> show val1
-        _ -> Nothing
-  let errors = catMaybes $ zipWith toError [0 :: Int ..] result
-  unless (null errors) $ fail (intercalate "\n" errors)
+checkCallRecord :: CallRecord -> CallWithArgs -> IO ()
+checkCallRecord (CallRecord actualArgs) (CallWithArgs expectedArgs) = do
+  when (length expectedArgs /= length actualArgs) $ fail $ "Expected " <> show (length expectedArgs) <> " arguments, called with " <> show (length actualArgs)
+  forM_ (zip expectedArgs actualArgs) $ \(ExpectedArg expected, Arg actual) -> do
+    unless (typeOf expected == typeOf ()) $ case cast actual of
+      Nothing -> throwIO $ MockFailure location $ MockFailureArgumentTypeMismatch (ExpectedArg expected) (Arg actual)
+      Just actual' -> unless (expected == actual') $ throwIO $ MockFailure location $ MockFailureArgumentValueMismatch expected actual'
 
-combineArgs :: MonadFail m => [Arg] -> [ExpectedArg] -> m [Either (TypeRep, TypeRep) (Bool, String, String)]
-combineArgs actual expected = do
-  when (length expected /= length actual) $ fail $ "Expected " <> show (length expected) <> " arguments, called with " <> show (length actual)
-  let compareArgs (Arg actArg) (ExpectedArg expArg) = case cast actArg of
-        Nothing -> Left (typeOf actArg, typeOf expArg)
-        Just actArg' -> Right (actArg' == expArg, show actArg', show expArg)
-  pure $ zipWith compareArgs actual expected
-
-checkCalls :: (MonadFail m, MonadIO m, ExpectedArgs args) => Mock mc -> [args] -> m ()
-checkCalls (Mock key actualRef _) expectedCalls = do
-  actualCalls <- reverse <$> liftIO (readIORef actualRef)
+assertHasCalls :: HasCallStack => Mock mc -> [CallWithArgs] -> IO ()
+assertHasCalls (Mock _ callsRef _) expectedCalls = do
+  actualCalls <- reverse <$> readIORef callsRef
   go actualCalls expectedCalls
   where
-    showCombination (Left (t, _)) = show t
-    showCombination (Right (_, val, _)) = val
     go (a : as) (e : es) = checkCallRecord a e >> go as es
     go [] [] = pure ()
-    go [] es = fail $ "Mock " <> key <> " did not perform expected calls: " <> show es
-    go as [] = case expectedCalls of
-      (expected:_) -> do
-        as' <- mapM (\(CallRecord args) -> combineArgs args (toDynArgs expected)) as
-        let showable = fmap (fmap showCombination) as'
-        fail $ "Mock " <> key <> " has unexpected calls: " <> show showable
-      [] -> fail $ "Mock " <> key <> " has unexpected calls: " <> show (length as) <> " calls"
+    go [] (e : _) = throwIO $ MockFailure location (MockFailureNotCalled e)
+    go (a : _) [] = throwIO $ MockFailure location (MockFailureUnexpectedCall a)
 
+assertNotCalled :: Mock mc -> IO ()
+assertNotCalled (Mock _ callsRef _) = do
+  actualCalls <- reverse <$> readIORef callsRef
+  case actualCalls of
+    [] -> pure ()
+    (actualCall : _) -> throwIO $ MockFailure location (MockFailureUnexpectedCall actualCall)
+
+location :: HasCallStack => Maybe SrcLoc
+location = case reverse callStack of
+  (_, loc) : _ -> Just loc
+  [] -> Nothing
