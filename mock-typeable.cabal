@@ -4,16 +4,16 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1953368ec9f1aea43c05c58b44429e1926a72d3e5226967cf886483520abd5f1
+-- hash: 261d7db410bf58237263e1a52db4568df9392b15510df637e7b952cd21bd98af
 
 name:           mock-typeable
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/githubuser/mock-typeable#readme>
-homepage:       https://github.com/githubuser/mock-typeable#readme
-bug-reports:    https://github.com/githubuser/mock-typeable/issues
-author:         Author name here
-maintainer:     example@example.com
-copyright:      2021 Author name here
+description:    Please see the README on GitHub at <https://github.com/lykahb/mock-typeable#readme>
+homepage:       https://github.com/lykahb/mock-typeable#readme
+bug-reports:    https://github.com/lykahb/mock-typeable/issues
+author:         Boris Lykah
+maintainer:     lykahb@gmail.com
+copyright:      2021 Boris Lykah
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
@@ -23,7 +23,7 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/githubuser/mock-typeable
+  location: https://github.com/lykahb/mock-typeable
 
 library
   exposed-modules:
