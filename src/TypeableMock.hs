@@ -6,7 +6,8 @@ module TypeableMock
     MockFailureReason (..),
     MockValue (..),
     makeMock,
-    mocksToConfig,
+    addMocksToConfig,
+    defaultMockConfig,
     assertHasCalls,
     assertNotCalled,
     call,
@@ -56,12 +57,13 @@ data MockValue m
   | forall x a b. (Typeable x, Typeable a, Typeable b) => MonadicMock2 (WithCallRecord (a -> b -> m x))
   | forall x a b c. (Typeable x, Typeable a, Typeable b, Typeable c) => MonadicMock3 (WithCallRecord (a -> b -> c -> m x))
 
-newtype MockConfig m = MockConfig (Map String (Map TypeRep (Mock m)))
-  deriving newtype (Monoid, Show)
+data MockConfig m = MockConfig {
+  mockConfigStorage :: Map String (Map TypeRep (Mock m)),
+  mockConfigFailOnLookup :: Bool
+  } deriving stock (Show)
 
-instance Semigroup (MockConfig m) where
-  -- The Semigroup operation for Map is union, which prefers values from the left operand. We need a union of operands instead.
-  MockConfig a <> MockConfig b = MockConfig $ Map.unionWith (<>) a b
+defaultMockConfig :: MockConfig m
+defaultMockConfig = MockConfig mempty False
 
 data MockFailure = MockFailure (Maybe SrcLoc) MockFailureReason
 
@@ -117,8 +119,8 @@ resetCallRecords :: Mock mc -> IO ()
 resetCallRecords (Mock _ callsRef _) = writeIORef callsRef []
 
 lookupMock :: MockConfig mc -> String -> TypeRep -> Maybe (Mock mc)
-lookupMock (MockConfig mocks) key tRep = do
-  tMap <- Map.lookup key mocks
+lookupMock mockConf key tRep = do
+  tMap <- Map.lookup key $ mockConfigStorage mockConf
   Map.lookup tRep tMap
 
 -- castMock :: Typeable a => Mock monadConstraint -> Maybe a
@@ -188,10 +190,11 @@ useMockM3 conf key = do
     Just _ -> error $ "useMockM3: expected MonadicMock3 for " <> key
     _ -> Nothing
 
-mocksToConfig :: [Mock mc] -> MockConfig mc
-mocksToConfig mocks = MockConfig mockMap
+addMocksToConfig :: MockConfig mc -> [Mock mc] -> MockConfig mc
+addMocksToConfig conf mocks = conf{mockConfigStorage=mockMap}
   where
-    mockMap = foldr (\mock@(Mock key _ _) keyMap -> Map.insertWith (<>) key (toTypeMap mock) keyMap) mempty mocks
+    mockMap = foldr insertMock (mockConfigStorage conf) mocks
+    insertMock mock@(Mock key _ _) = Map.insertWith (<>) key (toTypeMap mock)
     toTypeMap :: Mock mc -> Map TypeRep (Mock mc)
     toTypeMap mock@(Mock _ _ val) = Map.singleton (mockValueTypeRep val) mock
 

@@ -9,7 +9,7 @@ main = hspec $ do
   let runWithMock :: (Show a, Typeable a) => MockConfig IO -> a -> IO ()
       runWithMock mocks a = fromMaybe print (useMockM1 mocks "print") a
   printStringMock <- runIO $ makeMock "print" $ mockM1 (const $ pure () :: String -> IO ())
-  let mockConf = mocksToConfig [printStringMock]
+  let mockConf = defaultMockConfig `addMocksToConfig` [printStringMock]
 
   describe "Mock" $ before_ (resetCallRecords printStringMock) $ do
     it "mocks a single argument function" $ do
@@ -23,7 +23,7 @@ main = hspec $ do
             fromMaybe print2 (useMockM2 mocks "print2") 1 2
       print2Mock <- makeMock "print2" $ mockM2 ((\_ _ -> pure ()) :: Int -> Int -> IO ())
 
-      myfunc $ mocksToConfig [print2Mock]
+      myfunc $ defaultMockConfig `addMocksToConfig` [print2Mock]
       assertHasCalls print2Mock [call (1 :: Int) (2 :: Int)]
     
     it "mocks multiple calls" $ do
@@ -36,7 +36,7 @@ main = hspec $ do
 
     it "can dispatch mocks with the same name and different types" $ do
       printIntMock <- makeMock "print" $ mockM1 (const $ pure () :: Int -> IO ())
-      let mockConf' = mockConf <> mocksToConfig [printIntMock]
+      let mockConf' = mockConf `addMocksToConfig` [printIntMock]
       runWithMock mockConf' "some string"
       runWithMock mockConf' (1 :: Int)
       assertHasCalls printStringMock [call "some string"]
