@@ -16,7 +16,6 @@ module TypeableMock
     mockM1,
     mockM2,
     mockM3,
-    useMockPure,
     useMockM0,
     useMockM1,
     useMockM2,
@@ -32,7 +31,7 @@ import Data.IORef (IORef, modifyIORef, newIORef, readIORef, writeIORef)
 import Data.List (intercalate)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Typeable (Proxy (Proxy), TypeRep, Typeable, cast, eqT, gcast, typeOf, typeRep, (:~:) (Refl))
+import Data.Typeable (Proxy (Proxy), TypeRep, Typeable, cast, eqT, typeOf, typeRep, (:~:) (Refl))
 import Prelude
 
 newtype CallRecord = CallRecord [Arg]
@@ -48,14 +47,18 @@ instance Show (Mock m) where
 
 type WithCallRecord a = IORef [CallRecord] -> a
 
+-- see https://gitlab.haskell.org/ghc/ghc/-/issues/13655
+-- It would be nice to have an abstraction of a type that has a free variable m
 data MockValue m
-  = forall a. Typeable a => PureMock a
-  | forall a. Typeable a => RecordingMock (WithCallRecord a)
-  | -- https://gitlab.haskell.org/ghc/ghc/-/issues/13655
-    forall x. Typeable x => MonadicMock0 (WithCallRecord (m x))
-  | forall x a. (Typeable x, Typeable a) => MonadicMock1 (WithCallRecord (a -> m x))
-  | forall x a b. (Typeable x, Typeable a, Typeable b) => MonadicMock2 (WithCallRecord (a -> b -> m x))
-  | forall x a b c. (Typeable x, Typeable a, Typeable b, Typeable c) => MonadicMock3 (WithCallRecord (a -> b -> c -> m x))
+  = forall x. Typeable x => MockValue0 (WithCallRecord x)
+  | forall x a. (Typeable x, Typeable a) => MockValue1 (WithCallRecord (a -> x))
+  | forall x a b. (Typeable x, Typeable a, Typeable b) => MockValue2 (WithCallRecord (a -> b -> x))
+  | forall x a b c. (Typeable x, Typeable a, Typeable b, Typeable c) => MockValue3 (WithCallRecord (a -> b -> c -> x))
+  -- These values have a free variable m that is not typeable.
+  | forall x. Typeable x => MockValuePoly0 (WithCallRecord (m x))
+  | forall x a. (Typeable x, Typeable a) => MockValuePoly1 (WithCallRecord (a -> m x))
+  | forall x a b. (Typeable x, Typeable a, Typeable b) => MockValuePoly2 (WithCallRecord (a -> b -> m x))
+  | forall x a b c. (Typeable x, Typeable a, Typeable b, Typeable c) => MockValuePoly3 (WithCallRecord (a -> b -> c -> m x))
 
 data MockConfig m = MockConfig {
   mockConfigStorage :: Map String (Map TypeRep (Mock m)),
@@ -85,14 +88,17 @@ instance Show MockFailureReason where
 
 instance Exception MockFailure
 
--- | This allows us get a TypeRep even though the monad in MonadicMockX does not have `Typeable m`
+-- | This allows us get a TypeRep even though the monad in MockValuePolyX does not have `Typeable m`
 mockValueTypeRep :: MockValue m -> TypeRep
-mockValueTypeRep (PureMock a) = typeOf a
-mockValueTypeRep (RecordingMock (_ :: WithCallRecord a)) = typeRep (Proxy :: Proxy a)
-mockValueTypeRep (MonadicMock0 (_ :: WithCallRecord (m x))) = typeRep (Proxy :: Proxy (MockMonadTR x))
-mockValueTypeRep (MonadicMock1 (_ :: WithCallRecord (a -> m x))) = typeRep (Proxy :: Proxy (a -> MockMonadTR x))
-mockValueTypeRep (MonadicMock2 (_ :: WithCallRecord (a -> b -> m x))) = typeRep (Proxy :: Proxy (a -> b -> MockMonadTR x))
-mockValueTypeRep (MonadicMock3 (_ :: WithCallRecord (a -> b -> c -> m x))) = typeRep (Proxy :: Proxy (a -> b -> c -> MockMonadTR x))
+mockValueTypeRep (MockValue0 (_ :: WithCallRecord x)) = typeRep (Proxy :: Proxy x)
+mockValueTypeRep (MockValue1 (_ :: WithCallRecord (a -> x))) = typeRep (Proxy :: Proxy (a -> x))
+mockValueTypeRep (MockValue2 (_ :: WithCallRecord (a -> b -> x))) = typeRep (Proxy :: Proxy (a -> b -> x))
+mockValueTypeRep (MockValue3 (_ :: WithCallRecord (a -> b -> c -> x))) = typeRep (Proxy :: Proxy (a -> b -> c -> x))
+
+mockValueTypeRep (MockValuePoly0 (_ :: WithCallRecord (m x))) = typeRep (Proxy :: Proxy (MockMonadTR x))
+mockValueTypeRep (MockValuePoly1 (_ :: WithCallRecord (a -> m x))) = typeRep (Proxy :: Proxy (a -> MockMonadTR x))
+mockValueTypeRep (MockValuePoly2 (_ :: WithCallRecord (a -> b -> m x))) = typeRep (Proxy :: Proxy (a -> b -> MockMonadTR x))
+mockValueTypeRep (MockValuePoly3 (_ :: WithCallRecord (a -> b -> c -> m x))) = typeRep (Proxy :: Proxy (a -> b -> c -> MockMonadTR x))
 
 makeMock :: (MonadIO m) => String -> MockValue mc -> m (Mock mc)
 makeMock key mock = do
@@ -101,16 +107,16 @@ makeMock key mock = do
 
 -- TODO: turn mockMX into a typeclass
 mockM0 :: (MonadIO m, Typeable x) => m x -> MockValue m
-mockM0 f = MonadicMock0 $ \calls -> addCallRecord calls [] >> f
+mockM0 f = MockValuePoly0 $ \calls -> addCallRecord calls [] >> f
 
 mockM1 :: (MonadIO m, Typeable x, Typeable a) => (a -> m x) -> MockValue m
-mockM1 f = MonadicMock1 $ \calls a -> addCallRecord calls [Arg a] >> f a
+mockM1 f = MockValuePoly1 $ \calls a -> addCallRecord calls [Arg a] >> f a
 
 mockM2 :: (MonadIO m, Typeable x, Typeable a, Typeable b) => (a -> b -> m x) -> MockValue m
-mockM2 f = MonadicMock2 $ \calls a b -> addCallRecord calls [Arg a, Arg b] >> f a b
+mockM2 f = MockValuePoly2 $ \calls a b -> addCallRecord calls [Arg a, Arg b] >> f a b
 
 mockM3 :: (MonadIO m, Typeable x, Typeable a, Typeable b, Typeable c) => (a -> b -> c -> m x) -> MockValue m
-mockM3 f = MonadicMock3 $ \calls a b c -> addCallRecord calls [Arg a, Arg b, Arg c] >> f a b c
+mockM3 f = MockValuePoly3 $ \calls a b c -> addCallRecord calls [Arg a, Arg b, Arg c] >> f a b c
 
 addCallRecord :: MonadIO m => IORef [CallRecord] -> [Arg] -> m ()
 addCallRecord callsRef args = liftIO $ modifyIORef callsRef (CallRecord args :)
@@ -126,32 +132,27 @@ lookupMock mockConf key tRep = do
 -- castMock :: Typeable a => Mock monadConstraint -> Maybe a
 -- castMock mock = case mock of
 --   Mock _ calls (RecordingMock mkVal) -> cast (mkVal calls)
---   Mock _ calls (MonadicMock0 mkVal) -> gcast (mkVal calls)
---   Mock _ calls (MonadicMock1 mkVal) -> cast (mkVal calls)
+--   Mock _ calls (MockValuePoly0 mkVal) -> gcast (mkVal calls)
+--   Mock _ calls (MockValuePoly1 mkVal) -> cast (mkVal calls)
 --   Mock _ _ (PureMock _) -> error "castMock: PureMock"
 
-useMockPure :: forall m a. (Typeable a) => MockConfig m -> String -> Maybe a
-useMockPure conf key = do
-  let tRep = typeRep (Proxy :: Proxy a)
-  case lookupMock conf key tRep of
-    Just (Mock _ calls val) -> case val of
-      PureMock a -> cast a
-      RecordingMock a -> cast (a calls)
-      _ -> error $ "useMockPure: cannot be used with MonadicMock " <> key
-    _ -> Nothing
 
 -- we want to put into mock those and get them back without the need for `Typeable m`.
 -- m x
 -- a -> m x
 -- a -> b -> m x
-useMockM0 :: forall m x. (Typeable x) => MockConfig m -> String -> Maybe (m x)
+
+myCastPoly0 :: forall m x' x''. (Typeable x', Typeable x'') => (m x') -> Maybe (m x'')
+myCastPoly0 x = fmap (\Refl -> x) (eqT :: Maybe (x' :~: x''))
+
+useMockM0 :: forall m x out. (Typeable x, out ~ m x) => MockConfig m -> String -> Maybe out
 useMockM0 conf key = do
   let tRep = typeRep (Proxy :: Proxy (MockMonadTR x))
   case lookupMock conf key tRep of
-    Just (Mock _ calls (MonadicMock0 mock)) -> case gcast (mock calls) of
+    Just (Mock _ calls (MockValuePoly0 mock)) -> case myCastPoly0 (mock calls) of
       Just val -> Just val
       Nothing -> error $ "useMockM0: cast failed for " <> key
-    Just _ -> error $ "useMockM0: expected MonadicMock0 for " <> key
+    Just _ -> error $ "useMockM0: expected MockValuePoly0 for " <> key
     _ -> Nothing
 
 useMockM1 :: forall m x a. (Typeable x, Typeable a) => MockConfig m -> String -> Maybe (a -> m x)
@@ -160,10 +161,10 @@ useMockM1 conf key = do
   let myCast :: forall a' a'' x' x''. (Typeable a', Typeable a'', Typeable x', Typeable x'') => (a' -> m x') -> Maybe (a'' -> m x'')
       myCast x = fmap (\Refl -> x) (eqT :: Maybe ((a', x') :~: (a'', x'')))
   case lookupMock conf key tRep of
-    Just (Mock _ calls (MonadicMock1 mock)) -> case myCast (mock calls) of
+    Just (Mock _ calls (MockValuePoly1 mock)) -> case myCast (mock calls) of
       Just val -> Just val
       Nothing -> error $ "useMockM1: cast failed for " <> key
-    Just _ -> error $ "useMockM1: expected MonadicMock1 for " <> key
+    Just _ -> error $ "useMockM1: expected MockValuePoly1 for " <> key
     _ -> Nothing
 
 useMockM2 :: forall m x a b. (Typeable x, Typeable a, Typeable b) => MockConfig m -> String -> Maybe (a -> b -> m x)
@@ -172,10 +173,10 @@ useMockM2 conf key = do
   let myCast :: forall a' a'' b' b'' x' x''. (Typeable a', Typeable a'', Typeable b', Typeable b'', Typeable x', Typeable x'') => (a' -> b' -> m x') -> Maybe (a'' -> b'' -> m x'')
       myCast x = fmap (\Refl -> x) (eqT :: Maybe ((a', b', x') :~: (a'', b'', x'')))
   case lookupMock conf key tRep of
-    Just (Mock _ calls (MonadicMock2 mock)) -> case myCast (mock calls) of
+    Just (Mock _ calls (MockValuePoly2 mock)) -> case myCast (mock calls) of
       Just val -> Just val
       Nothing -> error $ "useMockM2: cast failed for " <> key
-    Just _ -> error $ "useMockM2: expected MonadicMock2 for " <> key
+    Just _ -> error $ "useMockM2: expected MockValuePoly2 for " <> key
     _ -> Nothing
 
 useMockM3 :: forall m x a b c. (Typeable x, Typeable a, Typeable b, Typeable c) => MockConfig m -> String -> Maybe (a -> b -> c -> m x)
@@ -184,10 +185,10 @@ useMockM3 conf key = do
   let myCast :: forall a' a'' b' b'' c' c'' x' x''. (Typeable a', Typeable a'', Typeable b', Typeable b'', Typeable c', Typeable c'', Typeable x', Typeable x'') => (a' -> b' -> c' -> m x') -> Maybe (a'' -> b'' -> c'' -> m x'')
       myCast x = fmap (\Refl -> x) (eqT :: Maybe ((a', b', c', x') :~: (a'', b'', c'', x'')))
   case lookupMock conf key tRep of
-    Just (Mock _ calls (MonadicMock3 mock)) -> case myCast (mock calls) of
+    Just (Mock _ calls (MockValuePoly3 mock)) -> case myCast (mock calls) of
       Just val -> Just val
       Nothing -> error $ "useMockM3: cast failed for " <> key
-    Just _ -> error $ "useMockM3: expected MonadicMock3 for " <> key
+    Just _ -> error $ "useMockM3: expected MockValuePoly3 for " <> key
     _ -> Nothing
 
 addMocksToConfig :: MockConfig mc -> [Mock mc] -> MockConfig mc
