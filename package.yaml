@@ -28,6 +28,9 @@ default-extensions:
 - ScopedTypeVariables
 - TypeApplications
 - TypeOperators
+- FlexibleInstances
+- MultiParamTypeClasses
+- FunctionalDependencies
 
 ghc-options:
 - -Wall
