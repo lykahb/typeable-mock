@@ -67,15 +67,19 @@ main = hspec $ do
       runWithMock mockConf "some string"
       assertHasCalls printStringMock [call ()]
     
-    -- it "works inside of a polymorphic monad" $ do
-    --   -- Polymorphic types cannot be used with Typeable typeOf. This library has a workaround for monads.
-    --   let printInMonad :: forall m . MonadIO m => MockConfig m -> String -> m ()
-    --       printInMonad mocks s = do
-    --         let Just mockedPrint = useMockPolyClass mocks "print"
-    --         mockedPrint s
-    --         -- fromMaybe (liftIO . print) (useMockPolyClass mocks "print") s
-    --   printInMonad mockConf "some string"
-    --   assertHasCalls printStringMock [call "some string"]
+    it "works inside of a polymorphic monad" $ do
+      -- Polymorphic types cannot be used with Typeable typeOf. This library has a workaround for monads.
+      let printInMonad :: forall m . MonadIO m => MockConfig m -> String -> m ()
+          printInMonad mocks s = do
+            -- let Just mockedPrint = useMockPolyClass mocks "print" :: Maybe (String -> m ())
+            -- mockedPrint s
+            fromMaybe (liftIO . print) (useMockPolyClass mocks "print") s
+      
+      printPoly <- makeMock "print" $ mockPolyClass ((\_ -> pure ()) :: MonadIO m => String -> m ())
+
+      let mockConf' = mockConf `addMocksToConfig` [printPoly]
+      printInMonad mockConf' "some string"
+      assertHasCalls printPoly [call "some string"]
       
     describe "assertNotCalled" $ do
       it "succeeds when mock was not called" $ do
