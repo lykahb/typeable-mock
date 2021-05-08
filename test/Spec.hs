@@ -69,9 +69,11 @@ main = hspec $ do
     
     -- it "works inside of a polymorphic monad" $ do
     --   -- Polymorphic types cannot be used with Typeable typeOf. This library has a workaround for monads.
-    --   let printInMonad :: MonadIO m => MockConfig m -> String -> m ()
+    --   let printInMonad :: forall m . MonadIO m => MockConfig m -> String -> m ()
     --       printInMonad mocks s = do
-    --         fromMaybe (liftIO . print) (useMockPolyClass mocks "print") s
+    --         let Just mockedPrint = useMockPolyClass mocks "print"
+    --         mockedPrint s
+    --         -- fromMaybe (liftIO . print) (useMockPolyClass mocks "print") s
     --   printInMonad mockConf "some string"
     --   assertHasCalls printStringMock [call "some string"]
       
