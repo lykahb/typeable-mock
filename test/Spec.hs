@@ -69,22 +69,24 @@ main = hspec $ do
       runWithMock mockConf "some string"
       assertHasCalls printStringMock [call ()]
     
-    -- it "works inside of a polymorphic monad" $ do
-    --   -- Polymorphic types cannot be used with Typeable typeOf. This library has a workaround for monads.
-    --   let printInMonadIO :: forall m . MonadIO m => MockConfig -> String -> m ()
-    --       printInMonadIO mocks s = do
-    --         fromMaybe (liftIO . print) (useMockClassMonadIO mocks "print") s
-    --   let printInIO :: MockConfig -> String -> IO ()
-    --       printInIO mocks s = do
-    --         fromMaybe print (useMockClassMonadIO mocks "print") s
+    it "works inside of a polymorphic monad" $ do
+      -- Polymorphic types cannot be used with Typeable typeOf. This library has a workaround for monads.
+      let printInMonadIO :: forall m . MonadIO m => MockConfig -> String -> m ()
+          printInMonadIO mocks s = do
+            let mockMonadIO = useMockPolyClass mocks "print" :: Maybe (String -> MockMonadIO ())
+                forallMock = fromMockMonadIO <$> mockMonadIO
+            fromMaybe (liftIO . print) forallMock s
+      let printInIO :: MockConfig -> String -> IO ()
+          printInIO mocks s = do
+            fromMaybe print (useMockPolyClass mocks "print") s
       
-    --   printPoly <- makeMock "print" $ mockPolyClass (\(_ :: String) -> MockMonadIO $ pure ())
+      printPoly <- makeMock "print" $ mockPolyClass (\(_ :: String) -> MockMonadIO $ pure ())
 
-    --   let mockConf' :: MockConfig
-    --       mockConf' = mockConf `addMocksToConfig` [printPoly]
-    --   printInMonadIO mockConf' "some string"
-    --   printInIO mockConf' "some string"
-    --   assertHasCalls printPoly [call "some string"]
+      let mockConf' :: MockConfig
+          mockConf' = mockConf `addMocksToConfig` [printPoly]
+      printInMonadIO mockConf' "some string"
+      printInIO mockConf' "some string"
+      assertHasCalls printPoly [call "some string"]
       
     describe "assertNotCalled" $ do
       it "succeeds when mock was not called" $ do
