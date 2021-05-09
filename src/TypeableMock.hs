@@ -1,7 +1,8 @@
-{-# LANGUAGE InstanceSigs, UndecidableInstances, KindSignatures, DataKinds, TypeFamilies #-}
+{-# LANGUAGE InstanceSigs, UndecidableInstances, FlexibleContexts, DataKinds, ScopedTypeVariables, TypeFamilies #-}
 module TypeableMock
   ( Mock (..),
     MockConfig (..),
+    MockMonadIO(..),
     CallRecord (..),
     MockFailure (..),
     MockFailureReason (..),
@@ -16,7 +17,8 @@ module TypeableMock
     mockClass,
     mockPolyClass,
     useMockClass,
-    useMockPolyClass
+    useMockPolyClass,
+    -- useMockClassMonadIO
   )
 where
 
@@ -28,33 +30,51 @@ import Data.IORef (IORef, modifyIORef, newIORef, readIORef, writeIORef)
 import Data.List (intercalate)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Typeable (Proxy (Proxy), TypeRep, Typeable, cast, eqT, mkFunTy, typeOf, typeRep, (:~:) (Refl))
+import Data.Typeable (Proxy (Proxy), TypeRep, Typeable, cast, typeOf, typeRep)
 import Prelude
-import Unsafe.Coerce ( unsafeCoerce )
+import Debug.Trace
+-- import Unsafe.Coerce ( unsafeCoerce )
 
 newtype CallRecord = CallRecord [Arg]
 
 data Arg = forall a. Typeable a => Arg a
 
-data Mock m = Mock String (IORef [CallRecord]) (MockValue m)
+data Mock = Mock String (IORef [CallRecord]) MockValue
 
-instance Show (Mock m) where
+instance Show Mock where
   show (Mock key _ _) = "Mock " <> key
+
+-- | Enables polymorphic mock functions.
+-- The newtype is equivalent to `MockConfig (forall m . MonadIO m => m)` which requires impredicative polymorphism.
+newtype MockMonadIO a = MockMonadIO {unMockMonadIO :: forall m. MonadIO m => m a}
+
+instance Functor MockMonadIO where
+  fmap f (MockMonadIO m) = MockMonadIO (fmap f m)
+
+instance Applicative MockMonadIO where
+  pure a = MockMonadIO (pure a)
+  MockMonadIO f <*> MockMonadIO a = MockMonadIO (f <*> a)
+
+instance Monad MockMonadIO where
+  MockMonadIO ma >>= f = MockMonadIO $ ma >>= unMockMonadIO . f
+
+instance MonadIO MockMonadIO where
+  liftIO m = MockMonadIO (liftIO m)
 
 type WithCallRecord a = IORef [CallRecord] -> a
 
 -- see https://gitlab.haskell.org/ghc/ghc/-/issues/13655
 -- It would be nice to have an abstraction of a type that has a free variable m
-data MockValue m
-  = forall func x. (Function func m x, Typeable x) => MockValuePolyClass (WithCallRecord func)
+data MockValue
+  = forall func m x. (Function func m x, Typeable m, Typeable x, Typeable func) => MockValuePolyClass (WithCallRecord func)
   | forall x. (Typeable x) => MockValueClass (WithCallRecord x)
 
-data MockConfig m = MockConfig {
-  mockConfigStorage :: Map String (Map TypeRep (Mock m)),
+data MockConfig = MockConfig {
+  mockConfigStorage :: Map String (Map TypeRep Mock),
   mockConfigFailOnLookup :: Bool
   } deriving stock (Show)
 
-defaultMockConfig :: MockConfig m
+defaultMockConfig :: MockConfig
 defaultMockConfig = MockConfig mempty False
 
 data MockFailure = MockFailure (Maybe SrcLoc) MockFailureReason
@@ -77,78 +97,69 @@ instance Show MockFailureReason where
 
 instance Exception MockFailure
 
--- | This allows us get a TypeRep even though the monad in MockValuePolyX does not have `Typeable m`
-mockValueTypeRep :: MockValue m -> TypeRep
-mockValueTypeRep (MockValuePolyClass _) = typeRep (Proxy :: Proxy Int)
+-- | This allows us get a TypeRep even though the monad in MockValuePolyClass does not have `Typeable m`
+mockValueTypeRep :: MockValue -> TypeRep
+mockValueTypeRep (MockValuePolyClass (_ :: WithCallRecord f)) = typeRep (Proxy :: Proxy f)
 mockValueTypeRep (MockValueClass (_ :: WithCallRecord f)) = typeRep (Proxy :: Proxy f)
 
-makeMock :: (MonadIO m) => String -> MockValue mc -> m (Mock mc)
+makeMock :: MonadIO m => String -> MockValue -> m Mock
 makeMock key mock = do
   callRecord <- liftIO $ newIORef []
   pure $ Mock key callRecord mock
 
--- TODO: turn mockMX into a typeclass
-mockPolyClass :: forall m x func . (MonadIO m, Typeable x, Function func m x) => func -> MockValue m
+mockPolyClass :: forall m x func . (MonadIO m, Typeable m, Typeable func, Typeable x, Function func m x) => func -> MockValue
 mockPolyClass f = MockValuePolyClass $ \calls -> run (undefined :: proxy (m x)) calls [] f
 
-mockClass :: forall m x func . (Typeable func, Typeable x, Function func m x) => func -> MockValue m
-mockClass f = MockValueClass $ \calls -> run (undefined :: proxy (m x)) calls [] f
+fromMockMonadIO :: (Function func MockMonadIO x, Function func' m x) => func -> func'
+fromMockMonadIO = convertFunc unMockMonadIO
 
+-- mockPolyClassMonadIO :: forall x func . (MonadIO m, Typeable x, Function func m x) => func -> MockValue
+-- mockPolyClassMonadIO f = MockValuePolyClass $ \calls -> where
+--   f'' = \calls -> convertFunc MockMonadIO (f' calls)
+--   f' calls = run (undefined :: proxy (m x)) calls [] f
+
+
+mockClass :: forall m x func . (Typeable func, Typeable x, Function func m x) => func -> MockValue
+mockClass f = MockValueClass $ \calls -> run (undefined :: proxy (m x)) calls [] f
 
 addCallRecord :: MonadIO m => IORef [CallRecord] -> [Arg] -> m ()
 addCallRecord callsRef args = liftIO $ modifyIORef callsRef (CallRecord args :)
 
-resetCallRecords :: Mock mc -> IO ()
+resetCallRecords :: Mock -> IO ()
 resetCallRecords (Mock _ callsRef _) = writeIORef callsRef []
 
-lookupMock :: MockConfig mc -> String -> TypeRep -> Maybe (Mock mc)
+lookupMock :: MockConfig -> String -> TypeRep -> Maybe Mock
 lookupMock mockConf key tRep = do
   tMap <- Map.lookup key $ mockConfigStorage mockConf
-  Map.lookup tRep tMap
+  traceShow (tRep, tMap) $ Map.lookup tRep tMap
 
 class MonadIO m => Function func m x | func -> m, func -> x where
   run :: proxy (m x) -> IORef [CallRecord] -> [Arg] -> func -> func
-  -- A function that has polymorphic types is not Typeable. This is a hack to get its TypeRep
-  -- funcTypeRep :: TypeRep -> proxy func -> TypeRep
+  convertFunc :: Function func' g x => (m a -> g a) -> func -> func'
 
 instance {-# OVERLAPS #-} (MonadIO m, func ~ m x) => Function func m x where
   run _ callsRef args result = do
     liftIO $ addCallRecord callsRef (reverse args)
     result
-  -- funcTypeRep resultTypeRep _ = resultTypeRep 
+  convertFunc = error "convertFunc"
 
-instance  {-# INCOHERENT  #-}  (MonadIO m, Typeable a, Function func m x) => Function (a -> func) m x where
+instance  {-# INCOHERENT #-}  (MonadIO m, Typeable a, Typeable x, Function func m x) => Function (a -> func) m x where
   run p callsRef args f = \a -> run p callsRef (Arg a:args) (f a)
-  -- funcTypeRep :: forall proxy . TypeRep -> proxy (a -> func) -> TypeRep
-  -- funcTypeRep resultTypeRep _ = mkFunTy argType funcType where
-  --   argType = typeRep (Proxy :: Proxy a)
-  --   funcType = funcTypeRep resultTypeRep (Proxy :: Proxy func)
+  convertFunc = error "convertFunc"
 
-
-castPolyFunction :: forall m f1 x1 f2 x2 . (Typeable x1, Typeable x2, Function f1 m x1, Function f2 m x2)
-             => f1 -> Maybe f2
-castPolyFunction f = Just (unsafeCoerce f)
- -- if type1 == type2
- --  then Just (unsafeCoerce f)
- --  else Nothing
- --  where
- --  type1 = funcTypeRep (typeRep (Proxy :: Proxy x1)) (Proxy :: Proxy f1)
- --  type2 = funcTypeRep (typeRep (Proxy :: Proxy x2)) (Proxy :: Proxy f2)
-
-useMockPolyClass :: forall m x func . (Typeable x, Function func m x) => MockConfig m -> String -> Maybe func
+useMockPolyClass :: forall m x func . (Typeable x, Typeable func, Function func m x) => MockConfig -> String -> Maybe func
 useMockPolyClass conf key = do
-  let tRep = typeRep (Proxy :: Proxy Int) --(Proxy :: Proxy func)
+  let tRep = typeRep (Proxy :: Proxy func)
   case lookupMock conf key tRep of
-    Just (Mock _ calls (MockValuePolyClass mock)) -> case castPolyFunction (mock calls) of
+    Just (Mock _ calls (MockValuePolyClass mock)) -> case cast (mock calls) of
       Just val -> Just val
       Nothing -> error $ "useMockPolyClass: cast failed for " <> key
     Just _ -> error $ "useMockPolyClass: expected MockValuePolyClass for " <> key
     _ -> Nothing
 
-useMockClass :: forall m x func . (Typeable func, Typeable x, Function func m x) => MockConfig m -> String -> Maybe func
+useMockClass :: forall func . Typeable func => MockConfig -> String -> Maybe func
 useMockClass conf key = do
   let tRep = typeRep (Proxy :: Proxy func)
-
   case lookupMock conf key tRep of
     Just (Mock _ calls (MockValueClass mock)) -> case cast (mock calls) of
       Just val -> Just val
@@ -156,12 +167,36 @@ useMockClass conf key = do
     Just _ -> error $ "useMockClass: expected MockValueClass for " <> key
     _ -> Nothing
 
-addMocksToConfig :: MockConfig mc -> [Mock mc] -> MockConfig mc
+-- useMockClassMonadIO :: forall func func' m x . (Typeable func, Function func MockMonadIO x, Function func' m x) => MockConfigockMonadIO -> String -> Maybe func'
+-- useMockClassMonadIO = error "useMockClassMonadIO"
+
+-- useMockClassMonadIO :: forall func func' m x . (Typeable func, Function func MockMonadIO x, Function func' m x) => MockConfig -> String -> Maybe func'
+
+lookupMockMonadIO :: (Typeable func, Function func MockMonadIO x) => MockConfig -> String -> Maybe func
+lookupMockMonadIO = useMockClass
+
+-- useMockClassMonadIO :: forall func func' x . (Function func' MockMonadIO x) => MockConfig -> String -> Maybe func'
+-- -- useMockClassMonadIO = error "useMockClassMonadIO"
+-- useMockClassMonadIO conf key = convertFunc unMockMonadIO <$> func where
+--   -- func :: Maybe func
+--   func = lookupMockMonadIO conf key
+-- useMockClassMonadIO :: forall func m x. (Typeable x, Function func m x) => MockConfig -> String -> Maybe func
+-- useMockClassMonadIO conf key = do
+--   let tRep = typeRep (Proxy :: Proxy Int) -- TODO: use func with the MockMonadIO
+--   case lookupMock conf key tRep of
+--     Just (Mock _ calls (MockValuePolyClass mock)) -> case cast (mock calls) of
+--       Just val -> Just $ convertFunc unMockMonadIO val
+--       Nothing -> error $ "useMockClass: cast failed for " <> key
+--     Just _ -> error $ "useMockClass: expected MockValueClass for " <> key
+--     _ -> Nothing
+
+
+addMocksToConfig :: MockConfig -> [Mock] -> MockConfig
 addMocksToConfig conf mocks = conf{mockConfigStorage=mockMap}
   where
     mockMap = foldr insertMock (mockConfigStorage conf) mocks
     insertMock mock@(Mock key _ _) = Map.insertWith (<>) key (toTypeMap mock)
-    toTypeMap :: Mock mc -> Map TypeRep (Mock mc)
+    toTypeMap :: Mock -> Map TypeRep Mock
     toTypeMap mock@(Mock _ _ val) = Map.singleton (mockValueTypeRep val) mock
 
 data ExpectedArg = forall a. (Typeable a, Show a, Eq a) => ExpectedArg a
@@ -192,7 +227,7 @@ checkCallRecord (CallRecord actualArgs) (CallWithArgs expectedArgs) = do
       Nothing -> throwIO $ MockFailure location $ MockFailureArgumentTypeMismatch (ExpectedArg expected) (Arg actual)
       Just actual' -> unless (expected == actual') $ throwIO $ MockFailure location $ MockFailureArgumentValueMismatch expected actual'
 
-assertHasCalls :: HasCallStack => Mock mc -> [CallWithArgs] -> IO ()
+assertHasCalls :: HasCallStack => Mock -> [CallWithArgs] -> IO ()
 assertHasCalls (Mock _ callsRef _) expectedCalls = do
   actualCalls <- reverse <$> readIORef callsRef
   go actualCalls expectedCalls
@@ -202,7 +237,7 @@ assertHasCalls (Mock _ callsRef _) expectedCalls = do
     go [] (e : _) = throwIO $ MockFailure location (MockFailureNotCalled e)
     go (a : _) [] = throwIO $ MockFailure location (MockFailureUnexpectedCall a)
 
-assertNotCalled :: Mock mc -> IO ()
+assertNotCalled :: Mock -> IO ()
 assertNotCalled (Mock _ callsRef _) = do
   actualCalls <- reverse <$> readIORef callsRef
   case actualCalls of
