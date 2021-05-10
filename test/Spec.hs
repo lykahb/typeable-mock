@@ -74,11 +74,11 @@ main = hspec $ do
       let printInMonadIO :: forall m . MonadIO m => MockConfig -> String -> m ()
           printInMonadIO mocks s = do
             let mockMonadIO = useMockPolyClass mocks "print" :: Maybe (String -> MockMonadIO ())
-                forallMock = fromMockMonadIO <$> mockMonadIO
+                forallMock = fromMockMonadIO1 <$> mockMonadIO
             fromMaybe (liftIO . print) forallMock s
       let printInIO :: MockConfig -> String -> IO ()
           printInIO mocks s = do
-            fromMaybe print (useMockPolyClass mocks "print") s
+            fromMaybe print (fromMockMonadIO1 <$> useMockPolyClass mocks "print") s
       
       printPoly <- makeMock "print" $ mockPolyClass (\(_ :: String) -> MockMonadIO $ pure ())
 
@@ -86,7 +86,7 @@ main = hspec $ do
           mockConf' = mockConf `addMocksToConfig` [printPoly]
       printInMonadIO mockConf' "some string"
       printInIO mockConf' "some string"
-      assertHasCalls printPoly [call "some string"]
+      assertHasCalls printPoly [call "some string", call "some string"]
       
     describe "assertNotCalled" $ do
       it "succeeds when mock was not called" $ do
