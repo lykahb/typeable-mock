@@ -73,14 +73,14 @@ main = hspec $ do
       -- Polymorphic types cannot be used with Typeable typeOf. This library has a workaround for monads.
       let printInMonadIO :: forall m . MonadIO m => MockConfig -> String -> m ()
           printInMonadIO mocks s = do
-            let mockMonadIO = useMockPolyClass mocks "print" :: Maybe (String -> MockMonadIO ())
+            let mockMonadIO = useMockClass mocks "print" :: Maybe (String -> MockMonadIO ())
                 forallMock = fromMockMonadIO1 <$> mockMonadIO
             fromMaybe (liftIO . print) forallMock s
       let printInIO :: MockConfig -> String -> IO ()
           printInIO mocks s = do
-            fromMaybe print (fromMockMonadIO1 <$> useMockPolyClass mocks "print") s
+            fromMaybe print (fromMockMonadIO1 <$> useMockClass mocks "print") s
       
-      printPoly <- makeMock "print" $ mockPolyClass (\(_ :: String) -> MockMonadIO $ pure ())
+      printPoly <- makeMock "print" $ mockClass (\(_ :: String) -> MockMonadIO $ pure ())
 
       let mockConf' :: MockConfig
           mockConf' = mockConf `addMocksToConfig` [printPoly]
