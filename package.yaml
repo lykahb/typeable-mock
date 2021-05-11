@@ -22,12 +22,13 @@ default-extensions:
 - DerivingStrategies
 - GADTs
 - GeneralizedNewtypeDeriving
-- ImportQualifiedPost
 - LambdaCase
 - RankNTypes
-- ScopedTypeVariables
 - TypeApplications
-- TypeOperators
+- FlexibleInstances
+- MultiParamTypeClasses
+- FunctionalDependencies
+- RecordWildCards
 
 ghc-options:
 - -Wall

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 261d7db410bf58237263e1a52db4568df9392b15510df637e7b952cd21bd98af
+-- hash: 58bf95742206458089061cde06fb376c8e7c6db7dcc8d1cc8ffb7c916fa0defd
 
 name:           mock-typeable
 version:        0.1.0.0
@@ -32,7 +32,7 @@ library
       Paths_mock_typeable
   hs-source-dirs:
       src
-  default-extensions: DerivingStrategies GADTs GeneralizedNewtypeDeriving ImportQualifiedPost LambdaCase RankNTypes ScopedTypeVariables TypeApplications TypeOperators
+  default-extensions: DerivingStrategies GADTs GeneralizedNewtypeDeriving LambdaCase RankNTypes TypeApplications FlexibleInstances MultiParamTypeClasses FunctionalDependencies RecordWildCards
   ghc-options: -Wall
   build-depends:
       base >=4.7 && <5
@@ -47,7 +47,7 @@ test-suite mock-typeable-test
       Paths_mock_typeable
   hs-source-dirs:
       test
-  default-extensions: DerivingStrategies GADTs GeneralizedNewtypeDeriving ImportQualifiedPost LambdaCase RankNTypes ScopedTypeVariables TypeApplications TypeOperators
+  default-extensions: DerivingStrategies GADTs GeneralizedNewtypeDeriving LambdaCase RankNTypes TypeApplications FlexibleInstances MultiParamTypeClasses FunctionalDependencies RecordWildCards
   ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
