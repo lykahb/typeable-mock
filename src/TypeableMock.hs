@@ -29,7 +29,7 @@ module TypeableMock
 where
 
 import Control.Exception (Exception, throwIO)
-import Control.Monad (forM_, unless, when)
+import Control.Monad (forM_, unless, when, zipWithM_)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.CallStack (HasCallStack, SrcLoc, callStack)
 import Data.IORef (IORef, modifyIORef, newIORef, readIORef, writeIORef)
@@ -77,7 +77,7 @@ instance Show MockFailureReason where
   show reason = intercalate "\n" $ case reason of
     MockFailureArgumentValueMismatch expected actual -> ["expected: " ++ show expected, " but got: " ++ show actual]
     MockFailureArgumentTypeMismatch (ExpectedArg expected) (Arg actual) -> ["expected: " ++ show expected, " but got value of different type: " ++ show (typeOf actual)]
-    MockFailureUnexpectedCall (CallRecord _) -> ["TODO"]
+    MockFailureUnexpectedCall (CallRecord _) -> ["unexpected call: TODO: print details"]
     MockFailureNotCalled (CallWithArgs args) -> ["expected call with arguments: " ++ show args, "but was not called"]
 
 instance Exception MockFailure
@@ -87,7 +87,9 @@ makeMock key mock = do
   callRecord <- liftIO $ newIORef []
   pure $ Mock key callRecord mock
 
-mockClass :: forall func args r m x. (MonadIO m, Typeable func, Typeable r, MockableFunction func args r, r ~ m x) => func -> MockValue
+mockClass :: forall f args r m x.
+  (MonadIO m, Typeable f, Typeable r, MockableFunction f args r, r ~ m x)
+  => f -> MockValue
 mockClass f = MockValueClass $ \calls -> recordArgs calls f
 
 useMockClass :: forall f. Typeable f => MockConfig -> String -> Maybe f
@@ -112,7 +114,7 @@ type family ConstructFunction (args :: [Type]) (r :: Type) where
   ConstructFunction '[] r = r
   ConstructFunction (a:as) r = a -> ConstructFunction as r
 
-class (args ~ FunctionArgs f, r ~ FunctionResult f, ConstructFunction args r ~ f) 
+class (args ~ FunctionArgs f, r ~ FunctionResult f, ConstructFunction args r ~ f)
   => MockableFunction f args r | args r -> f, f args -> r where
   transformFunction :: (args ~ FunctionArgs f', r' ~ FunctionResult f', ConstructFunction args r' ~ f')
     => (forall a. Typeable a => acc -> a -> acc) -> (acc -> r -> r') -> acc -> f -> f'
@@ -130,19 +132,18 @@ recordArgs :: (MonadIO m, MockableFunction f args (m a)) =>
 recordArgs callsRef = transformFunction fa fr [] where
   fa args a = Arg a:args
   fr args r = do
-    liftIO $ modifyIORef callsRef (CallRecord (reverse args) :)
+    liftIO $ modifyIORef callsRef (CallRecord args :)
     r
 
 resetCallRecords :: Mock -> IO ()
 resetCallRecords (Mock _ callsRef _) = writeIORef callsRef []
 
 lookupMock :: MockConfig -> String -> TypeRep -> Maybe Mock
-lookupMock MockConfig{..} key tRep = case Map.lookup key mockConfigStorage of
+lookupMock MockConfig{..} key tRep = case result of
   Nothing | mockConfigFailOnLookup -> error $ "TypeableMock: Mock not found: " <> key
-  Nothing -> Nothing
-  Just tMap -> case Map.lookup tRep tMap of
-    Nothing | mockConfigFailOnLookup -> error $ "TypeableMock: Mock not found: " <> key
-    result -> result
+  result' -> result'
+  where
+  result = Map.lookup key mockConfigStorage >>= Map.lookup tRep
 
 addMocksToConfig :: MockConfig -> [Mock] -> MockConfig
 addMocksToConfig conf mocks = conf {mockConfigStorage = mockMap}
@@ -165,7 +166,7 @@ class CalledWith res where
   calledWith :: [ExpectedArg] -> res
 
 instance CalledWith CallWithArgs where
-  calledWith = CallWithArgs . reverse
+  calledWith = CallWithArgs
 
 instance (Typeable a, Show a, Eq a, CalledWith res) => CalledWith (a -> res) where
   calledWith args arg = calledWith (ExpectedArg arg : args)
@@ -175,21 +176,25 @@ call = calledWith []
 
 checkCallRecord :: CallRecord -> CallWithArgs -> IO ()
 checkCallRecord (CallRecord actualArgs) (CallWithArgs expectedArgs) = do
-  when (length expectedArgs /= length actualArgs) $ fail $ "Expected " <> show (length expectedArgs) <> " arguments, called with " <> show (length actualArgs)
+  when (length expectedArgs /= length actualArgs) $
+    fail $ "Expected " <> show (length expectedArgs) <> " arguments, called with " <> show (length actualArgs)
   forM_ (zip expectedArgs actualArgs) $ \(ExpectedArg expected, Arg actual) -> do
     unless (typeOf expected == typeOf ()) $ case cast actual of
-      Nothing -> throwIO $ MockFailure location $ MockFailureArgumentTypeMismatch (ExpectedArg expected) (Arg actual)
-      Just actual' -> unless (expected == actual') $ throwIO $ MockFailure location $ MockFailureArgumentValueMismatch expected actual'
+      Just actual' | expected == actual' -> pure ()
+      Just actual' -> throwIO $ MockFailure location $
+        MockFailureArgumentValueMismatch expected actual'
+      Nothing -> throwIO $ MockFailure location $
+        MockFailureArgumentTypeMismatch (ExpectedArg expected) (Arg actual)
 
 assertHasCalls :: HasCallStack => Mock -> [CallWithArgs] -> IO ()
 assertHasCalls (Mock _ callsRef _) expectedCalls = do
   actualCalls <- reverse <$> readIORef callsRef
-  go actualCalls expectedCalls
-  where
-    go (a : as) (e : es) = checkCallRecord a e >> go as es
-    go [] [] = pure ()
-    go [] (e : _) = throwIO $ MockFailure location (MockFailureNotCalled e)
-    go (a : _) [] = throwIO $ MockFailure location (MockFailureUnexpectedCall a)
+  zipWithM_ checkCallRecord actualCalls expectedCalls
+
+  when (length actualCalls /= length expectedCalls) $
+    throwIO $ MockFailure location $ if length actualCalls > length expectedCalls
+      then MockFailureUnexpectedCall $ actualCalls !! length expectedCalls
+      else MockFailureNotCalled $ expectedCalls !! length actualCalls
 
 assertNotCalled :: Mock -> IO ()
 assertNotCalled (Mock _ callsRef _) = do
@@ -203,8 +208,7 @@ location = case reverse callStack of
   (_, loc) : _ -> Just loc
   [] -> Nothing
 
--- | Enables polymorphic mock functions.
--- The newtype is equivalent to `MockConfig (forall m . MonadIO m => m)` which requires impredicative polymorphism.
+-- | Helper for making polymorphic mock functions.
 newtype MockMonadIO a = MockMonadIO {unMockMonadIO :: forall m. MonadIO m => m a}
 
 instance Functor MockMonadIO where
@@ -226,7 +230,7 @@ fromMockMonadIO0 = unMockMonadIO
 fromMockMonadIO1 :: (a -> MockMonadIO x) -> (forall m. a -> MonadIO m => m x)
 fromMockMonadIO1 f = unMockMonadIO . f
 
-fromMockMonadIO :: forall m x f f' args . 
+fromMockMonadIO :: forall m x f f' args .
   (MonadIO m, MockableFunction f args (MockMonadIO x), MockableFunction f' args (m x))
   => f -> f'
 fromMockMonadIO = transformFunction const (const unMockMonadIO) ()
