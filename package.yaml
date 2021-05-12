@@ -24,7 +24,6 @@ default-extensions:
 - GeneralizedNewtypeDeriving
 - LambdaCase
 - RankNTypes
-- TypeApplications
 - FlexibleInstances
 - MultiParamTypeClasses
 - FunctionalDependencies
