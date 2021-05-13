@@ -130,8 +130,8 @@ makeMock key f = do
 -- In combination with `asTypeOf` it lets you omit the type annotation.
 --
 -- > makeMock "getSomething" (constN "something" `asTypeOf` getSomething)
-constN :: Typeable a => a -> Function Typeable f args a => a -> f
-constN a = createFunction (Proxy :: Proxy Typeable) const (const a) ()
+constN :: EmptyConstraint a => a -> Function EmptyConstraint f args a => a -> f
+constN a = createFunction (Proxy :: Proxy EmptyConstraint) const (const a) ()
 
 -- | A helper function to lookup the function. Likely you want to write a wrapper
 -- that retrieves the @MockConfig@ from the environment.
@@ -321,6 +321,6 @@ unMockMonadIO5 f = unMockMonadIO4 . f
 -- The @m@ must be a monomorphic type caller.
 -- If the caller is in a polymorphic monad, use one of the @unMockMonadION@ instead.
 fromMockMonadIO :: forall m x args f f' .
-  (MonadIO m, Function Typeable f args (MockMonadIO x), Function Typeable f' args (m x))
+  (MonadIO m, Function EmptyConstraint f args (MockMonadIO x), Function EmptyConstraint f' args (m x))
   => f -> f'
-fromMockMonadIO = transformFunction (Proxy :: Proxy Typeable) const (const unMockMonadIO) ()
+fromMockMonadIO = transformFunction (Proxy :: Proxy EmptyConstraint) const (const unMockMonadIO) ()

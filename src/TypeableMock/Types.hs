@@ -64,6 +64,9 @@ instance (Function argC f args r, argC a)
   transformFunction pArgC fa fr acc f = \a -> transformFunction pArgC fa fr (fa acc a) (f a)
   createFunction pArgC fa fr acc = createFunction pArgC fa fr . fa acc
 
+class EmptyConstraint a
+instance EmptyConstraint a
+
 -- | Combine constraints
 class (f x, g x) => (&) f g (x :: k)
 instance (f x, g x) => (&) f g x
