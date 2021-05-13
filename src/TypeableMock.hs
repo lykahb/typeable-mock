@@ -11,7 +11,7 @@ module TypeableMock
     addMocksToConfig,
     -- * Creating and calling mocks
     makeMock,
-    useMock,
+    lookupMockFunction,
     constN,
     -- * Checking calls
     MockFailure (..),
@@ -136,14 +136,14 @@ constN a = createFunction (Proxy :: Proxy EmptyConstraint) const (const a) ()
 -- | A helper function to lookup the function. Likely you want to write a wrapper
 -- that retrieves the @MockConfig@ from the environment.
 -- 
--- > useMockInApp :: String -> f -> AppMonad f
--- > useMockInApp key f = do
+-- > withMock :: String -> f -> AppMonad f
+-- > withMock key f = do
 -- >   mockConf <- getMockConfig <$> getEnv
--- >   fromMaybe f (useMock mockConf key)
+-- >   pure $ fromMaybe f (lookupMockFunction mockConf key)
 -- >
--- > useMockInApp "getSomething" getSomething >>= \f -> f someArg
-useMock :: forall f. Typeable f => MockConfig -> String -> Maybe f
-useMock conf key = do
+-- > withMock "getSomething" getSomething >>= \f -> f someArg
+lookupMockFunction :: forall f. Typeable f => MockConfig -> String -> Maybe f
+lookupMockFunction conf key = do
   let tRep = typeRep (Proxy :: Proxy f)
   case lookupMockForUse conf key tRep of
     Just Mock {..} -> case cast (mockFunction mockCallRecord) of
@@ -251,8 +251,8 @@ matchArgs (PredicateArg (p :: a -> Bool)) (ActualArg (actual :: b)) =
       else Just $ MockFailureArgumentPredicateFailure actual
 
 -- | Assert that mock has been called, and match the expected calls in a given order.
-assertHasCalls :: HasCallStack => Mock -> [ExpectedCallRecord] -> IO ()
-assertHasCalls mock expectedCalls = do
+assertHasCalls :: HasCallStack => [ExpectedCallRecord] -> Mock -> IO ()
+assertHasCalls expectedCalls mock = do
   actualCalls <- getCalls mock
   zipEqualLength actualCalls expectedCalls
   where
@@ -265,13 +265,13 @@ assertHasCalls mock expectedCalls = do
   zipEqualLength _ (e:_) = throw $ MockFailureNotCalled e
 
 assertNotCalled :: HasCallStack => Mock -> IO ()
-assertNotCalled mock = assertHasCalls mock []
+assertNotCalled = assertHasCalls []
 
 callMatches :: ExpectedCallRecord -> ActualCallRecord -> Bool
 callMatches expCall actCall = isNothing $ checkCallRecord actCall expCall
 
-assertAnyCall :: Mock -> ExpectedCallRecord -> IO ()
-assertAnyCall mock expCall = do
+assertAnyCall :: ExpectedCallRecord -> Mock -> IO ()
+assertAnyCall expCall mock = do
   actualCalls <- getCalls mock
   if any (callMatches expCall) actualCalls
     then pure ()
