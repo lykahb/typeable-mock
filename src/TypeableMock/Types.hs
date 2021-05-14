@@ -14,7 +14,6 @@ module TypeableMock.Types where
 import Data.Kind (Type)
 
 -- | Toolkit for creating and transforming functions with a variable number of arguments.
-
 class (args ~ FunctionArgs f, r ~ FunctionResult f, ConstructFunction args r ~ f) =>
   Function argC f args r | args r -> f, f args -> r where
   -- | Make a new function out of an existing one. It keeps the same arguments but may have a different type of result.

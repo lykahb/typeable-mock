@@ -143,14 +143,14 @@ constN a = createFunction (Proxy :: Proxy EmptyConstraint) const (const a) ()
 -- >
 -- > withMock "getSomething" getSomething >>= \f -> f someArg
 lookupMockFunction :: forall f. Typeable f => MockConfig -> String -> Maybe f
-lookupMockFunction conf key = do
+lookupMockFunction MockConfig{..} key = do
   let tRep = typeRep (Proxy :: Proxy f)
-  case lookupMockForUse conf key tRep of
+  case Map.lookup key mcStorage >>= Map.lookup tRep of
     Just Mock {..} -> case cast (mockFunction mockCallRecord) of
       Just val -> Just val
-      -- This should never happen on successful lookup
-      Nothing -> error $ "useMockClass: cast failed for " <> key
-    _ -> Nothing
+      Nothing -> error $ "lookupMockFunction: impossible happened. Cast failed for " <> key
+    Nothing | mcFailOnLookup -> error $ "lookupMockFunction: Mock" <> key <> " not found"
+    Nothing -> Nothing
 
 recordArgs :: (Typeable x, MonadIO m, Function Typeable f args (m x)) =>
   IORef [ActualCallRecord] -> f -> f
@@ -168,13 +168,6 @@ resetMockCallRecords (Mock _ callsRef _) = writeIORef callsRef []
 -- Reuse the mocks between the test items
 resetAllCallRecords :: MockConfig -> IO ()
 resetAllCallRecords MockConfig{..} = mapM_ (mapM_ resetMockCallRecords) mcStorage
-
-lookupMockForUse :: MockConfig -> String -> TypeRep -> Maybe Mock
-lookupMockForUse MockConfig{..} key tRep = case result of
-  Nothing | mcFailOnLookup -> error $ "lookupMockForUse: Mock" <> key <> "not found"
-  result' -> result'
-  where
-  result = Map.lookup key mcStorage >>= Map.lookup tRep
 
 -- | Finds a mock by name. If there are several mocks under the same name, use `lookupMockTyped`.
 lookupMock :: HasCallStack => MockConfig -> String -> Mock
