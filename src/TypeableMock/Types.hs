@@ -6,6 +6,8 @@
 {-# LANGUAGE UndecidableSuperClasses #-} -- Required by & class
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+
 
 module TypeableMock.Types where
 
@@ -66,6 +68,13 @@ instance (Function argC f args r, argC a)
 
 class EmptyConstraint a
 instance EmptyConstraint a
+
+-- | Function composition for any number of arguments
+--
+-- >>> (show `composeN` \a b c -> (a + b + c :: Int)) 1 2 3
+-- "6"
+composeN :: (Function EmptyConstraint f args a, Function EmptyConstraint g args b) => (a -> b) -> f -> g
+composeN f = transformFunction (undefined :: p EmptyConstraint) const (\_ r -> f r) ()
 
 -- | Combine constraints
 class (f x, g x) => (&) f g (x :: k)

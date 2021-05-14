@@ -317,10 +317,16 @@ unMockMonadIO4 f = unMockMonadIO3 . f
 unMockMonadIO5 :: (a -> b -> c -> d -> e -> MockMonadIO x) -> (forall m. MonadIO m => a -> b -> c -> d -> e-> m x)
 unMockMonadIO5 f = unMockMonadIO4 . f
 
+-- unMockMonadIO5
+--  :: (a -> b -> c -> d -> e -> MockMonadIO x)
+--  -> (forall m. (FunctionResult (m x) ~ m x, MonadIO m, FunctionArgs (m x) ~ '[])
+--      => a -> b -> c -> d -> e-> m x)
+-- unMockMonadIO5 f = composeN unMockMonadIO
+
 -- | Changes the return type of a function from @MockMonadIO x@ to @m x@.
 -- The @m@ must be a monomorphic type caller.
 -- If the caller is in a polymorphic monad, use one of the @unMockMonadION@ instead.
 fromMockMonadIO :: forall m x args f f' .
   (MonadIO m, Function EmptyConstraint f args (MockMonadIO x), Function EmptyConstraint f' args (m x))
   => f -> f'
-fromMockMonadIO = transformFunction (Proxy :: Proxy EmptyConstraint) const (const unMockMonadIO) ()
+fromMockMonadIO = composeN unMockMonadIO
