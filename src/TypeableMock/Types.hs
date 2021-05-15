@@ -17,13 +17,13 @@ import Data.Kind (Type)
 class (args ~ FunctionArgs f, r ~ FunctionResult f, ConstructFunction args r ~ f) =>
   Function argC f args r | args r -> f, f args -> r where
   -- | Make a new function out of an existing one. It keeps the same arguments but may have a different type of result.
-  transformFunction :: (args ~ FunctionArgs f', r' ~ FunctionResult f', ConstructFunction args r' ~ f')
-    => proxy argC  -- ^ Required for unambiguous choice of Function instance
+  transformFunction
+    :: proxy argC  -- ^ Required for unambiguous choice of Function instance
     -> (forall a. argC a => acc -> a -> acc)   -- ^ Combine arguments with accumulator
     -> (acc -> r -> r')  -- ^ Make result of the target function
     -> acc  -- ^ Accumulator
-    -> f  -- ^ The original function
-    -> f' -- ^ The new function
+    -> ConstructFunction args r  -- ^ The original function
+    -> ConstructFunction args r' -- ^ The new function
   
   -- | Create a new function
   --
@@ -38,7 +38,7 @@ class (args ~ FunctionArgs f, r ~ FunctionResult f, ConstructFunction args r ~ f
     -> (forall a. argC a => acc -> a -> acc)  -- ^ Combine arguments with accumulator
     -> (acc -> r)   -- ^ Make result of the function
     -> acc  -- ^ Accumulator
-    -> f
+    -> ConstructFunction args r
 
 -- | Extract list of arguments from a function.
 type family FunctionArgs f :: [Type] where

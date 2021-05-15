@@ -130,7 +130,7 @@ makeMock key f = do
 -- In combination with `asTypeOf` it lets you omit the type annotation.
 --
 -- > makeMock "getSomething" (constN "something" `asTypeOf` getSomething)
-constN :: EmptyConstraint a => a -> Function EmptyConstraint f args a => a -> f
+constN :: Function EmptyConstraint f args a => a -> f
 constN a = createFunction (Proxy :: Proxy EmptyConstraint) const (const a) ()
 
 -- | A helper function to lookup the function. Likely you want to write a wrapper
