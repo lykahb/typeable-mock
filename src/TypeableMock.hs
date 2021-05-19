@@ -145,14 +145,12 @@ constN a = createFunction (Proxy :: Proxy EmptyConstraint) const (const a) ()
 -- >
 -- > withMock "getSomething" getSomething >>= \f -> f someArg
 lookupMockFunction :: forall f. Typeable f => MockConfig -> String -> Maybe f
-lookupMockFunction MockConfig{..} key = do
-  let tRep = typeRep (Proxy :: Proxy f)
-  case Map.lookup key mcStorage >>= Map.lookup tRep of
-    Just Mock {..} -> case cast (mockFunction mockCallRecord) of
-      Just val -> Just val
-      Nothing -> error $ "lookupMockFunction: impossible happened. Cast failed for " <> key
-    Nothing | mcFailOnLookup -> error $ "lookupMockFunction: Mock" <> key <> " not found"
-    Nothing -> Nothing
+lookupMockFunction conf key = case lookupMockTyped conf key (Proxy :: Proxy f) of
+  Just Mock {..} -> case cast (mockFunction mockCallRecord) of
+    Just val -> Just val
+    Nothing -> error $ "lookupMockFunction: impossible happened. Cast failed for " <> key <> " from " 
+      <> show (typeOf (mockFunction mockCallRecord)) <> " to " <> show (typeRep (Proxy :: Proxy f))
+  Nothing -> Nothing
 
 recordArgs :: (Typeable x, MonadIO m, Function Typeable f args (m x)) =>
   IORef [ActualCallRecord] -> f -> f
@@ -175,16 +173,25 @@ resetAllCallRecords MockConfig{..} = mapM_ (mapM_ resetMockCallRecords) mcStorag
 lookupMock :: HasCallStack => MockConfig -> String -> Mock
 lookupMock MockConfig{..} key = case Map.lookup key mcStorage of
   Nothing -> error $ "lookupMock: Mock " <> key <> " not found"
-  Just tMap -> case Map.toList tMap of
-    [(_, mock)] -> mock
+  Just tMap -> case Map.elems tMap of
+    [mock] -> mock
     _ -> error $ "lookupMock: There are " <> show (Map.size tMap) <> " mocks under the name \"" <> key <> "\". Use lookupMockTyped to disambiguate."
 
-lookupMockTyped :: forall t proxy . (HasCallStack, Typeable t) => MockConfig -> String -> proxy t -> Mock
-lookupMockTyped MockConfig{..} key t = case Map.lookup key mcStorage of
-  Nothing -> error $ "lookupMockTyped: Mock " <> key <> " not found"
-  Just tMap -> case Map.lookup (typeRep t) tMap of
-    Just mock -> mock
-    _ -> error $ "lookupMockTyped: Mock " <> key <> "not found."
+lookupMockTyped :: forall t proxy . (HasCallStack, Typeable t) => MockConfig -> String -> proxy t -> Maybe Mock
+lookupMockTyped MockConfig{..} key proxy =
+  case Map.lookup key mcStorage of
+    Just tMap -> case Map.lookup tRep tMap of
+      Just mock -> Just mock
+      Nothing | mcFailOnLookup -> error $ 
+        "lookupMockTyped: cannot find mock " <> key <> " :: " <> show tRep <> ". "
+        <> "There are mocks with other types under the same name:\n" <> unlines (map show $ Map.elems tMap)
+      Nothing -> Nothing
+    Nothing | mcFailOnLookup -> error $
+      "lookupMockTyped: cannot find mock " <> key <> " :: " <> show tRep <> ". "
+      <> "There are no mocks under this name."
+    Nothing -> Nothing
+  where
+    tRep = typeRep proxy
 
 addMocksToConfig :: MockConfig -> [Mock] -> MockConfig
 addMocksToConfig conf mocks = conf {mcStorage = mockMap}
@@ -254,6 +261,8 @@ matchArgs (PredicateArg (p :: a -> Bool)) (ActualArg (actual :: b)) =
       else Just $ MockFailureArgumentPredicateFailure actual
 
 -- | Assert that mock has been called, and match the expected calls in a given order.
+--
+-- @lookupMockInEnv "name" >>= assertHasCalls [expectCall "arg1" "arg2"]@
 assertHasCalls :: HasCallStack => [ExpectedCallRecord] -> Mock -> IO ()
 assertHasCalls expectedCalls mock = do
   actualCalls <- getCalls mock

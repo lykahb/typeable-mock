@@ -132,7 +132,7 @@ main = hspec $ do
       it "lookupMockTyped finds mock by name and type" $ do
         printIntMock <- makeMock "print" ((\_  -> pure ()) :: Int -> IO ())
         let mockConf' = mockConf `addMocksToConfig` [printIntMock]
-        let mock = lookupMockTyped mockConf' "print" (undefined :: p (Int -> IO ()))
+        let Just mock = lookupMockTyped mockConf' "print" (undefined :: p (Int -> IO ()))
         show mock `shouldBe` show printIntMock
 
     describe "assertNotCalled" $ do
