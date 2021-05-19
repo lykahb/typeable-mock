@@ -27,6 +27,7 @@ module TypeableMock
     assertAnyCall,
     getCalls,
     expectCall,
+    withResult,
     callMatches,
     resetMockCallRecords,
     resetAllCallRecords,
@@ -42,6 +43,7 @@ module TypeableMock
 where
 
 import Control.Exception (Exception, throwIO)
+import Control.Applicative
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.CallStack (HasCallStack, SrcLoc, callStack)
 import Data.IORef (IORef, modifyIORef, newIORef, readIORef, writeIORef)
@@ -53,7 +55,7 @@ import Data.Typeable (Proxy (Proxy), TypeRep, Typeable, cast, typeOf, typeRep, e
 import Prelude
 import TypeableMock.Types
 
-data ActualCallRecord = forall a. Typeable a => ActualCallRecord [ActualArg] a
+data ActualCallRecord = ActualCallRecord [ActualArg] ActualArg
 
 data ActualArg = forall a. Typeable a => ActualArg a
 
@@ -158,7 +160,7 @@ recordArgs callsRef = transformFunction (Proxy :: Proxy Typeable) fa fr [] where
   fa args a = ActualArg a:args
   fr args mx = do
     x <- mx
-    liftIO $ modifyIORef callsRef (ActualCallRecord (reverse args) x:)
+    liftIO $ modifyIORef callsRef (ActualCallRecord (reverse args) (ActualArg x):)
     pure x
 
 -- Reuse the mocks between the test items
@@ -216,17 +218,25 @@ instance Show ExpectedArg where
 expectCall :: (Function (Show & Eq & Typeable) f args ExpectedCallRecord)
   => f
 expectCall = createFunction (Proxy :: Proxy (Show & Eq & Typeable)) fa fr [] where
-  fa args arg = case cast arg of
-    Just arg' -> arg' : args
-    Nothing -> ExpectedArg arg : args
+  fa args arg = (:args) $ case cast arg of
+    Just arg' -> arg'
+    Nothing -> ExpectedArg arg
   fr args = ExpectedCallRecord (reverse args) AnyArg
 
-checkCallRecord :: HasCallStack => ActualCallRecord -> ExpectedCallRecord -> Maybe MockFailureReason
-checkCallRecord actCall@(ActualCallRecord actualArgs _) expCall@(ExpectedCallRecord expectedArgs _) =
-  if length expectedArgs /= length actualArgs
-    then Just $ MockFailureArgumentCountMismatch expCall actCall
-    else listToMaybe $ catMaybes $ zipWith matchArgs expectedArgs actualArgs
+withResult :: (Show a, Eq a, Typeable a) => ExpectedCallRecord -> a -> ExpectedCallRecord
+withResult (ExpectedCallRecord args _) arg = ExpectedCallRecord args r where
+  r = case cast arg of
+    Just arg' -> arg'
+    Nothing -> ExpectedArg arg
 
+checkCallRecord :: HasCallStack => ActualCallRecord -> ExpectedCallRecord -> Maybe MockFailureReason
+checkCallRecord actCall@(ActualCallRecord actArgs actRes) expCall@(ExpectedCallRecord expArgs expRes) = 
+  argFailure <|> resFailure where
+  argFailure = if length expArgs /= length actArgs
+    then Just $ MockFailureArgumentCountMismatch expCall actCall
+    else listToMaybe $ catMaybes $ zipWith matchArgs expArgs actArgs
+  resFailure = matchArgs expRes actRes
+  
 matchArgs :: ExpectedArg -> ActualArg -> Maybe MockFailureReason
 matchArgs AnyArg _ = Nothing
 matchArgs (ExpectedArg expected) (ActualArg actual) = 

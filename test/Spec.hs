@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts, ScopedTypeVariables, TypeApplications #-}
+import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Maybe (fromMaybe)
 import Data.Typeable (Typeable)
@@ -64,11 +65,26 @@ main = hspec $ do
         ] `shouldThrow` \case
           MockFailure {mfReason=MockFailureNotCalled {}} -> True; _ -> False
     
-    it "fails when a call is with unexpected arguments" $ do
+    it "fails when a call is with different arguments" $ do
       printWithMock mockConf "some string"
       flip assertHasCalls printStringMock [expectCall "another string"] `shouldThrow` \case
         MockFailure {mfReason=MockFailureArgumentValueMismatch {}} -> True; _ -> False
     
+    it "fails when a call returns different result" $ do
+      let doubleFunc :: Int -> IO Int
+          doubleFunc a = print a >> pure (a * 2)
+      doubleMock <- makeMock "double" ((\a -> pure (a * 2)) `asTypeOf` doubleFunc)
+      let mockConf' = mockConf `addMocksToConfig` [doubleMock]
+
+      void $ withMock mockConf' doubleFunc "double" 5
+      flip assertHasCalls doubleMock [
+        expectCall AnyArg `withResult` (10 :: Int)
+        ]
+      flip assertHasCalls doubleMock [
+        expectCall AnyArg `withResult` (11 :: Int)
+        ] `shouldThrow` \case
+        MockFailure {mfReason=MockFailureArgumentValueMismatch {}} -> True; _ -> False
+
     it "ignores expected argument when it is AnyArg" $ do
       printWithMock mockConf "some string"
       flip assertHasCalls printStringMock [expectCall AnyArg]
