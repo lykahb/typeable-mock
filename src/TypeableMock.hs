@@ -69,14 +69,32 @@ instance Show Mock where
   show Mock {..} = "Mock (" <> mockKey <> " :: " <> show tRep <> ")" where
     tRep = typeRep mockFunction
 
-data MockConfig = MockConfig
-  { mcStorage :: Map String (Map TypeRep Mock),
-    mcFailOnLookup :: Bool
+
+-- | Mock configuration. When running production, use the `defaultMockConfig` without adding mocks to it -
+-- it would call the real functions.
+--
+-- The key or type of the mock created in a test suite may accidentally mismatch the key or type at the place where a mock is used.
+-- Silently calling the real functions would make the test suite fragile.
+-- So, when running on a test suite, protect against the mismatches by requiring that the mocks are present.
+-- Set `mcShouldFailOnNotFound` to return True or allow a few special cases:
+--
+-- > testMockConfig = defaultMockConfig {
+-- >   mcShouldFailOnNotFound = \\key tRep -> key ``notElem`` whitelist where
+-- >     -- Functions that are allowed to be called during tests.
+-- >     whitelist = ["readFile"]
+-- > }
+data MockConfig = MockConfig {
+  -- | A map of mocks. The key of the inner map is the @TypeRep@ of the function supplied when making a mock.
+    mcStorage :: Map String (Map TypeRep Mock)
+  -- | Decide whether to throw an error when a mock is not found.
+  , mcShouldFailOnNotFound :: String -> TypeRep -> Bool
   }
-  deriving stock (Show)
+
+instance Show MockConfig where
+  show MockConfig {..} = "MockConfig " <> show mcStorage
 
 defaultMockConfig :: MockConfig
-defaultMockConfig = MockConfig mempty False
+defaultMockConfig = MockConfig mempty (\_ _ -> False)
 
 data MockFailure = MockFailure {
   mfMock :: Mock,
@@ -182,11 +200,11 @@ lookupMockTyped MockConfig{..} key proxy =
   case Map.lookup key mcStorage of
     Just tMap -> case Map.lookup tRep tMap of
       Just mock -> Just mock
-      Nothing | mcFailOnLookup -> error $ 
+      Nothing | mcShouldFailOnNotFound key tRep -> error $
         "lookupMockTyped: cannot find mock " <> key <> " :: " <> show tRep <> ". "
         <> "There are mocks with other types under the same name:\n" <> unlines (map show $ Map.elems tMap)
       Nothing -> Nothing
-    Nothing | mcFailOnLookup -> error $
+    Nothing | mcShouldFailOnNotFound key tRep -> error $
       "lookupMockTyped: cannot find mock " <> key <> " :: " <> show tRep <> ". "
       <> "There are no mocks under this name."
     Nothing -> Nothing
@@ -299,6 +317,22 @@ location = case reverse callStack of
   [] -> Nothing
 
 -- | Helper for making polymorphic mock functions.
+-- It is a common pattern to put the application logic into a polymorphic monad with several type classes.
+-- However, only the monomorphic types have an instance of Typeable and can be mocked. The solution is to
+-- wrap a polymorphic function.
+--
+-- Define a mock and put it in the config:
+--
+-- > makeMock (const $ pure "getSomething" :: Int -> MockMonadIO String)
+--
+-- Then use it at the call site. It is a good idea to define a helper withMock for your monad
+-- that handles getting the mock config and mock lookup. That would make calling a mock much more concise.
+--
+-- > insideAppPolymorphicMonad :: (HasEnv m, MonadIO m) => Int -> m ()
+-- > insideAppPolymorphicMonad arg = do
+-- >   mockConf <- getMockConfig <$> getEnv
+-- >   let mock = lookupMockFunction mockConf "getSomething"
+-- >   (maybe unMockMonadIO1 getSomething mock) arg
 newtype MockMonadIO a = MockMonadIO {unMockMonadIO :: forall m. MonadIO m => m a}
 
 instance Functor MockMonadIO where

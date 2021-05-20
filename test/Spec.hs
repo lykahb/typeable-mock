@@ -98,8 +98,8 @@ main = hspec $ do
         ] `shouldThrow` \case
           MockFailure {mfReason=MockFailureArgumentPredicateFailure {}} -> True; _ -> False
 
-    it "fails when mcFailOnLookup is set" $ do
-      let mockConf' = mockConf { mcFailOnLookup = True }
+    it "fails when mcFailOnLookup returns true" $ do
+      let mockConf' = mockConf { mcShouldFailOnNotFound = \_ _ -> True }
       withMock mockConf' print "printDoesNotExist" () `shouldThrow` anyErrorCall
     
     it "works inside of a polymorphic monad" $ do
