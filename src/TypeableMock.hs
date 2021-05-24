@@ -43,11 +43,11 @@ module TypeableMock
 where
 
 import Control.Exception (Exception, throwIO)
-import Control.Applicative
+import Control.Applicative (Alternative((<|>)) )
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.CallStack (HasCallStack, SrcLoc, callStack)
 import Data.IORef (IORef, modifyIORef, newIORef, readIORef, writeIORef)
-import Data.List (intercalate)
+import Data.List (foldl', intercalate)
 import Data.Map (Map)
 import Data.Maybe
 import qualified Data.Map as Map
@@ -214,11 +214,11 @@ lookupMockTyped MockConfig{..} key proxy =
 addMocksToConfig :: MockConfig -> [Mock] -> MockConfig
 addMocksToConfig conf mocks = conf {mcStorage = mockMap}
   where
-    mockMap = foldr insertMock (mcStorage conf) mocks
-    insertMock mock@(Mock key _ _) = Map.insertWith (<>) key (toTypeMap mock)
-    toTypeMap :: Mock -> Map TypeRep Mock
-    toTypeMap mock@(Mock _ _ (_ :: IORef [ActualCallRecord] -> f)) =
-      Map.singleton (typeRep (Proxy :: Proxy f)) mock
+    mockMap = foldl' insertMock (mcStorage conf) mocks
+    insertMock m mock@Mock{..} = Map.insertWith insert mockKey singleMock m where
+      singleMock = Map.singleton tRep mock
+      insert _ = Map.insert tRep mock
+      tRep = typeOf $ mockFunction undefined
 
 data ExpectedArg
   = AnyArg

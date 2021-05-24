@@ -39,6 +39,18 @@ main = hspec $ do
         expectCall "another string"
         ]
 
+    it "addMocksToConfig overrides mocks" $ do
+      printIntMock1 <- makeMock "print" (const $ pure () :: Int -> IO ())
+      printIntMock2 <- makeMock "print" (const $ pure () :: Int -> IO ())
+      let mockConf' = mockConf `addMocksToConfig` [printIntMock1, printIntMock2]
+      printWithMock mockConf' (1 :: Int)
+      flip assertHasCalls printIntMock2 [expectCall (1 :: Int)]
+
+      printIntMock3 <- makeMock "print" (const $ pure () :: Int -> IO ())
+      let mockConf'' = mockConf `addMocksToConfig` [printIntMock3]
+      printWithMock mockConf'' (1 :: Int)
+      flip assertHasCalls printIntMock3 [expectCall (1 :: Int)]
+
     it "shows correctly" $ do
       mock <- makeMock "print" (const $ pure () :: Int -> IO ())
       show mock `shouldBe` "Mock (print :: Int -> IO ())"
