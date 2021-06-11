@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.33.0.
+-- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 11697d0af4c615d13cc781147eb1d51cd854d085bf10a7122748d31cf6255a84
+-- hash: 2959b30f0a9dc7b7c42e7540e065e690d8b89a810b3379da535333e25bcd2afd
 
 name:           mock-typeable
 version:        0.1.0.0
@@ -33,7 +33,16 @@ library
       Paths_mock_typeable
   hs-source-dirs:
       src
-  default-extensions: DerivingStrategies GADTs GeneralizedNewtypeDeriving LambdaCase RankNTypes FlexibleInstances MultiParamTypeClasses FunctionalDependencies RecordWildCards
+  default-extensions:
+      DerivingStrategies
+      GADTs
+      GeneralizedNewtypeDeriving
+      LambdaCase
+      RankNTypes
+      FlexibleInstances
+      MultiParamTypeClasses
+      FunctionalDependencies
+      RecordWildCards
   ghc-options: -Wall
   build-depends:
       base >=4.7 && <5
@@ -48,7 +57,16 @@ test-suite mock-typeable-test
       Paths_mock_typeable
   hs-source-dirs:
       test
-  default-extensions: DerivingStrategies GADTs GeneralizedNewtypeDeriving LambdaCase RankNTypes FlexibleInstances MultiParamTypeClasses FunctionalDependencies RecordWildCards
+  default-extensions:
+      DerivingStrategies
+      GADTs
+      GeneralizedNewtypeDeriving
+      LambdaCase
+      RankNTypes
+      FlexibleInstances
+      MultiParamTypeClasses
+      FunctionalDependencies
+      RecordWildCards
   ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5

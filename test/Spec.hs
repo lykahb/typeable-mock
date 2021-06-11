@@ -1,4 +1,6 @@
-{-# LANGUAGE FlexibleContexts, ScopedTypeVariables, TypeApplications #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Maybe (fromMaybe)
@@ -17,141 +19,158 @@ main = hspec $ do
   let mockConf :: MockConfig
       mockConf = defaultMockConfig `addMocksToConfig` [printStringMock]
 
-  describe "Mock" $ before_ (resetAllCallRecords mockConf) $ do
-    it "mocks a single argument function" $ do
-      printWithMock mockConf "some string"
-      flip assertHasCalls printStringMock [expectCall "some string"]
-
-    it "mocks a multiple arguments function" $ do
-      let print2 :: Int -> Int -> IO ()
-          print2 a b = print (a, b)
-          print2WithMock conf = withMock conf print2 "print2" 1 2
-      
-      print2Mock <- makeMock "print2" ((\_ _ -> pure ()) :: Int -> Int -> IO ())
-      print2WithMock $ defaultMockConfig `addMocksToConfig` [print2Mock]
-      flip assertHasCalls print2Mock [expectCall (1 :: Int) (2 :: Int)]
-    
-    it "mocks multiple calls" $ do
-      printWithMock mockConf "some string"
-      printWithMock mockConf "another string"
-      flip assertHasCalls printStringMock [
-        expectCall "some string",
-        expectCall "another string"
-        ]
-
-    it "addMocksToConfig overrides mocks" $ do
-      printIntMock1 <- makeMock "print" (const $ pure () :: Int -> IO ())
-      printIntMock2 <- makeMock "print" (const $ pure () :: Int -> IO ())
-      let mockConf' = mockConf `addMocksToConfig` [printIntMock1, printIntMock2]
-      printWithMock mockConf' (1 :: Int)
-      flip assertHasCalls printIntMock2 [expectCall (1 :: Int)]
-
-      printIntMock3 <- makeMock "print" (const $ pure () :: Int -> IO ())
-      let mockConf'' = mockConf `addMocksToConfig` [printIntMock3]
-      printWithMock mockConf'' (1 :: Int)
-      flip assertHasCalls printIntMock3 [expectCall (1 :: Int)]
-
-    it "shows correctly" $ do
-      mock <- makeMock "print" (const $ pure () :: Int -> IO ())
-      show mock `shouldBe` "Mock (print :: Int -> IO ())"
-
-    it "can dispatch mocks with the same name and different types" $ do
-      printIntMock <- makeMock "print" (const $ pure () :: Int -> IO ())
-      let mockConf' = mockConf `addMocksToConfig` [printIntMock]
-      printWithMock mockConf' "some string"
-      printWithMock mockConf' (1 :: Int)
-      flip assertHasCalls printStringMock [expectCall "some string"]
-      flip assertHasCalls printIntMock [expectCall (1 :: Int)]
-
-    it "fails when there are more calls than expected" $ do
-      printWithMock mockConf "some string"
-      printWithMock mockConf "another string"
-      flip assertHasCalls printStringMock [expectCall "some string"] `shouldThrow` \case
-        MockFailure {mfReason=MockFailureUnexpectedCall {}} -> True; _ -> False
-
-    it "fails when there are fewer calls than expected" $ do
-      printWithMock mockConf "some string"
-      flip assertHasCalls printStringMock [
-        expectCall "some string",
-        expectCall "another string"
-        ] `shouldThrow` \case
-          MockFailure {mfReason=MockFailureNotCalled {}} -> True; _ -> False
-    
-    it "fails when a call is with different arguments" $ do
-      printWithMock mockConf "some string"
-      flip assertHasCalls printStringMock [expectCall "another string"] `shouldThrow` \case
-        MockFailure {mfReason=MockFailureArgumentValueMismatch {}} -> True; _ -> False
-    
-    it "fails when a call returns different result" $ do
-      let doubleFunc :: Int -> IO Int
-          doubleFunc a = print a >> pure (a * 2)
-      doubleMock <- makeMock "double" ((\a -> pure (a * 2)) `asTypeOf` doubleFunc)
-      let mockConf' = mockConf `addMocksToConfig` [doubleMock]
-
-      void $ withMock mockConf' doubleFunc "double" 5
-      flip assertHasCalls doubleMock [
-        expectCall AnyArg `withResult` (10 :: Int)
-        ]
-      flip assertHasCalls doubleMock [
-        expectCall AnyArg `withResult` (11 :: Int)
-        ] `shouldThrow` \case
-        MockFailure {mfReason=MockFailureArgumentValueMismatch {}} -> True; _ -> False
-
-    it "ignores expected argument when it is AnyArg" $ do
-      printWithMock mockConf "some string"
-      flip assertHasCalls printStringMock [expectCall AnyArg]
-
-    it "checks predicate for argument" $ do
-      printWithMock mockConf "some string"
-      flip assertHasCalls printStringMock [
-        expectCall (PredicateArg (== "some string"))]
-      flip assertHasCalls printStringMock [
-        expectCall (PredicateArg (== "another string"))
-        ] `shouldThrow` \case
-          MockFailure {mfReason=MockFailureArgumentPredicateFailure {}} -> True; _ -> False
-
-    it "fails when mcFailOnLookup returns true" $ do
-      let mockConf' = mockConf { mcShouldFailOnNotFound = \_ _ -> True }
-      withMock mockConf' print "printDoesNotExist" () `shouldThrow` anyErrorCall
-    
-    it "works inside of a polymorphic monad" $ do
-      -- Polymorphic types cannot be used with Typeable typeOf. This library has a workaround for monads.
-      let printInMonadIO :: forall m . MonadIO m => MockConfig -> String -> m ()
-          printInMonadIO conf s = do
-            fromMaybe (liftIO . print) (unMockMonadIO1 <$> lookupMockFunction conf "print") s
-      let printInIO :: MockConfig -> String -> IO ()
-          printInIO conf s = do
-            fromMaybe print (fromMockMonadIO <$> lookupMockFunction conf "print") s
-      
-      printPoly <- makeMock "print" (const $ pure () :: String -> MockMonadIO ())
-
-      let mockConf' :: MockConfig
-          mockConf' = mockConf `addMocksToConfig` [printPoly]
-      printInMonadIO mockConf' "some string"
-      printInIO mockConf' "some string"
-      flip assertHasCalls printPoly [expectCall "some string", expectCall "some string"]
-    
-    describe "lookup mock" $ do
-      it "lookupMock finds mock by name" $ do
-        show (lookupMock mockConf "print") `shouldBe` show printStringMock
-
-      it "lookupMock fails when there are multiple mocks with the same name" $ do
-        printIntMock <- makeMock "print" ((\_  -> pure ()) :: Int -> IO ())
-        let mockConf' = mockConf `addMocksToConfig` [printIntMock]
-        (lookupMock mockConf' "print" `seq` pure ()) `shouldThrow`
-          errorCall "lookupMock: There are 2 mocks under the name \"print\". Use lookupMockTyped to disambiguate."
-      
-      it "lookupMockTyped finds mock by name and type" $ do
-        printIntMock <- makeMock "print" ((\_  -> pure ()) :: Int -> IO ())
-        let mockConf' = mockConf `addMocksToConfig` [printIntMock]
-        let Just mock = lookupMockTyped mockConf' "print" (undefined :: p (Int -> IO ()))
-        show mock `shouldBe` show printIntMock
-
-    describe "assertNotCalled" $ do
-      it "succeeds when mock was not called" $ do
-        assertNotCalled printStringMock
-
-      it "fails when mock was called" $ do
+  describe "Mock" $
+    before_ (resetAllCallRecords mockConf) $ do
+      it "mocks a single argument function" $ do
         printWithMock mockConf "some string"
-        assertNotCalled printStringMock `shouldThrow` \case
-          MockFailure {mfReason=MockFailureUnexpectedCall {}} -> True; _ -> False
+        assertHasCalls [expectCall "some string"] printStringMock
+
+      it "mocks a multiple arguments function" $ do
+        let print2 :: Int -> Int -> IO ()
+            print2 a b = print (a, b)
+            print2WithMock conf = withMock conf print2 "print2" 1 2
+
+        print2Mock <- makeMock "print2" ((\_ _ -> pure ()) :: Int -> Int -> IO ())
+        print2WithMock $ defaultMockConfig `addMocksToConfig` [print2Mock]
+        assertHasCalls [expectCall (1 :: Int) (2 :: Int)] print2Mock
+
+      it "mocks multiple calls" $ do
+        printWithMock mockConf "some string"
+        printWithMock mockConf "another string"
+        assertHasCalls
+          [ expectCall "some string",
+            expectCall "another string"
+          ]
+          printStringMock
+
+      it "addMocksToConfig overrides mocks" $ do
+        printIntMock1 <- makeMock "print" (const $ pure () :: Int -> IO ())
+        printIntMock2 <- makeMock "print" (const $ pure () :: Int -> IO ())
+        let mockConf' = mockConf `addMocksToConfig` [printIntMock1, printIntMock2]
+        printWithMock mockConf' (1 :: Int)
+        assertHasCalls [expectCall (1 :: Int)] printIntMock2
+
+        printIntMock3 <- makeMock "print" (const $ pure () :: Int -> IO ())
+        let mockConf'' = mockConf `addMocksToConfig` [printIntMock3]
+        printWithMock mockConf'' (1 :: Int)
+        assertHasCalls [expectCall (1 :: Int)] printIntMock3
+
+      it "shows correctly" $ do
+        mock <- makeMock "print" (const $ pure () :: Int -> IO ())
+        show mock `shouldBe` "Mock (print :: Int -> IO ())"
+
+      it "can dispatch mocks with the same name and different types" $ do
+        printIntMock <- makeMock "print" (const $ pure () :: Int -> IO ())
+        let mockConf' = mockConf `addMocksToConfig` [printIntMock]
+        printWithMock mockConf' "some string"
+        printWithMock mockConf' (1 :: Int)
+        assertHasCalls [expectCall "some string"] printStringMock
+        assertHasCalls [expectCall (1 :: Int)] printIntMock
+
+      it "fails when there are more calls than expected" $ do
+        printWithMock mockConf "some string"
+        printWithMock mockConf "another string"
+        assertHasCalls [expectCall "some string"] printStringMock `shouldThrow` \case
+          MockFailure {mfReason = MockFailureUnexpectedCall {}} -> True
+          _ -> False
+
+      it "fails when there are fewer calls than expected" $ do
+        printWithMock mockConf "some string"
+        assertHasCalls
+          [ expectCall "some string",
+            expectCall "another string"
+          ]
+          printStringMock
+          `shouldThrow` \case
+            MockFailure {mfReason = MockFailureNotCalled {}} -> True
+            _ -> False
+
+      it "fails when a call is with different arguments" $ do
+        printWithMock mockConf "some string"
+        assertHasCalls [expectCall "another string"] printStringMock `shouldThrow` \case
+          MockFailure {mfReason = MockFailureArgumentValueMismatch {}} -> True
+          _ -> False
+
+      it "fails when a call returns different result" $ do
+        let doubleFunc :: Int -> IO Int
+            doubleFunc a = print a >> pure (a * 2)
+        doubleMock <- makeMock "double" ((\a -> pure (a * 2)) `asTypeOf` doubleFunc)
+        let mockConf' = mockConf `addMocksToConfig` [doubleMock]
+
+        void $ withMock mockConf' doubleFunc "double" 5
+        assertHasCalls
+          [ expectCall AnyArg `withResult` (10 :: Int)
+          ]
+          doubleMock
+        assertHasCalls
+          [ expectCall AnyArg `withResult` (11 :: Int)
+          ]
+          doubleMock
+          `shouldThrow` \case
+            MockFailure {mfReason = MockFailureArgumentValueMismatch {}} -> True
+            _ -> False
+
+      it "ignores expected argument when it is AnyArg" $ do
+        printWithMock mockConf "some string"
+        assertHasCalls [expectCall AnyArg] printStringMock
+
+      it "checks predicate for argument" $ do
+        printWithMock mockConf "some string"
+        assertHasCalls
+          [ expectCall (PredicateArg (== "some string"))
+          ]
+          printStringMock
+        assertHasCalls
+          [ expectCall (PredicateArg (== "another string"))
+          ]
+          printStringMock
+          `shouldThrow` \case
+            MockFailure {mfReason = MockFailureArgumentPredicateFailure {}} -> True
+            _ -> False
+
+      it "fails when mcFailOnLookup returns true" $ do
+        let mockConf' = mockConf {mcShouldFailOnNotFound = \_ _ -> True}
+        withMock mockConf' print "printDoesNotExist" () `shouldThrow` anyErrorCall
+
+      it "works inside of a polymorphic monad" $ do
+        -- Polymorphic types cannot be used with Typeable typeOf. This library has a workaround for monads.
+        let printInMonadIO :: forall m. MonadIO m => MockConfig -> String -> m ()
+            printInMonadIO conf s = do
+              maybe (liftIO . print) unMockMonadIO1 (lookupMockFunction conf "print") s
+        let printInIO :: MockConfig -> String -> IO ()
+            printInIO conf s = do
+              maybe print fromMockMonadIO (lookupMockFunction conf "print") s
+
+        printPoly <- makeMock "print" (const $ pure () :: String -> MockMonadIO ())
+
+        let mockConf' :: MockConfig
+            mockConf' = mockConf `addMocksToConfig` [printPoly]
+        printInMonadIO mockConf' "some string"
+        printInIO mockConf' "some string"
+        assertHasCalls [expectCall "some string", expectCall "some string"] printPoly
+
+      describe "lookup mock" $ do
+        it "lookupMock finds mock by name" $ do
+          show (lookupMock mockConf "print") `shouldBe` show printStringMock
+
+        it "lookupMock fails when there are multiple mocks with the same name" $ do
+          printIntMock <- makeMock "print" ((\_ -> pure ()) :: Int -> IO ())
+          let mockConf' = mockConf `addMocksToConfig` [printIntMock]
+          (lookupMock mockConf' "print" `seq` pure ())
+            `shouldThrow` errorCall "lookupMock: There are 2 mocks under the name \"print\". Use lookupMockTyped to disambiguate."
+
+        it "lookupMockTyped finds mock by name and type" $ do
+          printIntMock <- makeMock "print" ((\_ -> pure ()) :: Int -> IO ())
+          let mockConf' = mockConf `addMocksToConfig` [printIntMock]
+          let Just mock = lookupMockTyped mockConf' "print" (undefined :: p (Int -> IO ()))
+          show mock `shouldBe` show printIntMock
+
+      describe "assertNotCalled" $ do
+        it "succeeds when mock was not called" $ do
+          assertNotCalled printStringMock
+
+        it "fails when mock was called" $ do
+          printWithMock mockConf "some string"
+          assertNotCalled printStringMock `shouldThrow` \case
+            MockFailure {mfReason = MockFailureUnexpectedCall {}} -> True
+            _ -> False
