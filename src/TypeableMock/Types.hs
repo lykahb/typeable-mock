@@ -27,13 +27,13 @@ class
     -- | Combine arguments with accumulator
     (forall a. argC a => acc -> a -> acc) ->
     -- | Make result of the target function
-    (acc -> r -> r') ->
+    (acc -> r0 -> r) ->
     -- | Accumulator
     acc ->
     -- | The original function
-    ConstructFunction args r ->
+    ConstructFunction args r0 ->
     -- | The new function
-    ConstructFunction args r'
+    f
 
   -- | Create a new function
   --
@@ -52,7 +52,7 @@ class
     (acc -> r) ->
     -- | Accumulator
     acc ->
-    ConstructFunction args r
+    f
 
 -- | Extract list of arguments from a function.
 type family FunctionArgs f :: [Type] where
