@@ -9,7 +9,7 @@
 -- Required by & class
 {-# LANGUAGE UndecidableSuperClasses #-}
 
-module TypeableMock.Types where
+module Test.TypeableMock.Types where
 
 import Data.Kind (Type)
 

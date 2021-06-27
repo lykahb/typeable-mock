@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 
-module TypeableMock
+module Test.TypeableMock
   ( -- * Types
     Mock (..),
     MockConfig (..),
@@ -54,7 +54,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Typeable (Proxy (Proxy), TypeRep, Typeable, cast, eqT, typeOf, typeRep, (:~:) (..))
-import TypeableMock.Types
+import Test.TypeableMock.Types
 import Prelude
 
 data ActualCallRecord = ActualCallRecord [ActualArg] ActualArg

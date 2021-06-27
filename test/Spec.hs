@@ -6,7 +6,7 @@ import Control.Monad.IO.Class (MonadIO (..))
 import Data.Maybe (fromMaybe)
 import Data.Typeable (Typeable)
 import Test.Hspec
-import TypeableMock
+import Test.TypeableMock
 
 main :: IO ()
 main = hspec $ do

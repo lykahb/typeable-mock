@@ -3,14 +3,12 @@ cabal-version: 1.12
 -- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
---
--- hash: 2959b30f0a9dc7b7c42e7540e065e690d8b89a810b3379da535333e25bcd2afd
 
-name:           mock-typeable
+name:           typeable-mock
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/lykahb/mock-typeable#readme>
-homepage:       https://github.com/lykahb/mock-typeable#readme
-bug-reports:    https://github.com/lykahb/mock-typeable/issues
+description:    Please see the README on GitHub at <https://github.com/lykahb/typeable-mock#readme>
+homepage:       https://github.com/lykahb/typeable-mock#readme
+bug-reports:    https://github.com/lykahb/typeable-mock/issues
 author:         Boris Lykah
 maintainer:     lykahb@gmail.com
 copyright:      2021 Boris Lykah
@@ -23,14 +21,14 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/lykahb/mock-typeable
+  location: https://github.com/lykahb/typeable-mock
 
 library
   exposed-modules:
-      TypeableMock
-      TypeableMock.Types
+      Test.TypeableMock
+      Test.TypeableMock.Types
   other-modules:
-      Paths_mock_typeable
+      Paths_typeable_mock
   hs-source-dirs:
       src
   default-extensions:
@@ -50,11 +48,11 @@ library
     , containers
   default-language: Haskell2010
 
-test-suite mock-typeable-test
+test-suite typeable-mock-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Paths_mock_typeable
+      Paths_typeable_mock
   hs-source-dirs:
       test
   default-extensions:
@@ -73,5 +71,5 @@ test-suite mock-typeable-test
     , call-stack >=0.2.0
     , containers
     , hspec
-    , mock-typeable
+    , typeable-mock
   default-language: Haskell2010

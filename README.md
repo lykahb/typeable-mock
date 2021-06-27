@@ -1,4 +1,4 @@
-# mock-typeable
+# typeable-mock
 
 ## Introduction
 
@@ -62,4 +62,4 @@ printType = x where
                    printType :: forall (m :: * -> *). MonadIO m => m ()
 ```
 
-Mock-typeable has helpers for mocking functions that are polymorphic on their monad. When declaring mock in the tests, use `mockMX` where X is the number of arguments. Inside of the code that calls mock, use one of the corresponding functions `useMockMX`.
+typeable-mock has helpers for mocking functions that are polymorphic on their monad. When declaring mock in the tests, use `mockMX` where X is the number of arguments. Inside of the code that calls mock, use one of the corresponding functions `useMockMX`.

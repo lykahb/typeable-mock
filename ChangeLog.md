@@ -1,3 +1,3 @@
-# Changelog for mock-typeable
+# Changelog for typeable-mock
 
 ## Unreleased changes

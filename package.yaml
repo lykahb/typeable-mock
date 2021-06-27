@@ -1,6 +1,6 @@
-name:                mock-typeable
+name:                typeable-mock
 version:             0.1.0.0
-github:              "lykahb/mock-typeable"
+github:              "lykahb/typeable-mock"
 license:             BSD3
 author:              "Boris Lykah"
 maintainer:          "lykahb@gmail.com"
@@ -11,7 +11,7 @@ extra-source-files:
 - ChangeLog.md
 
 
-description:         Please see the README on GitHub at <https://github.com/lykahb/mock-typeable#readme>
+description:         Please see the README on GitHub at <https://github.com/lykahb/typeable-mock#readme>
 
 dependencies:
 - base >= 4.7 && < 5
@@ -39,7 +39,7 @@ library:
   source-dirs: src
 
 tests:
-  mock-typeable-test:
+  typeable-mock-test:
     main:                Spec.hs
     source-dirs:         test
     ghc-options:
@@ -47,5 +47,5 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - mock-typeable
+    - typeable-mock
     - hspec
