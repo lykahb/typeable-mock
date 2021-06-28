@@ -9,7 +9,16 @@
 -- Required by & class
 {-# LANGUAGE UndecidableSuperClasses #-}
 
-module Test.TypeableMock.Types where
+module Test.TypeableMock.Types
+  ( Function (..),
+    FunctionArgs,
+    FunctionResult,
+    ConstructFunction,
+    EmptyConstraint,
+    type (&),
+    composeN,
+  )
+where
 
 import Data.Kind (Type)
 
