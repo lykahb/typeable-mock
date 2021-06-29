@@ -20,29 +20,30 @@ module Test.TypeableMock.Types
   )
 where
 
-import Data.Kind (Type)
+import Data.Kind (Type, Constraint)
 
 -- | Toolkit for creating and transforming functions with a variable number of arguments.
+-- Its parameters are function, list of its arguments, its result, and `argC` that constraints all arguments of the function.
 class
-  (args ~ FunctionArgs f, r ~ FunctionResult f, ConstructFunction args r ~ f) =>
-  Function argC f args r
-    | args r -> f,
-      f args -> r
+  (args ~ FunctionArgs func, result ~ FunctionResult func, ConstructFunction args result ~ func) =>
+  Function func args result (argC :: Type -> Constraint)
+    | args result -> func,
+      func args -> result
   where
-  -- | Make a new function out of an existing one. It keeps the same arguments but may have a different type of result.
+  -- | Create a function with the same arguments as given one but may have a different result. 
   transformFunction ::
     -- | Required for unambiguous choice of Function instance
     proxy argC ->
     -- | Combine arguments with accumulator
     (forall a. argC a => acc -> a -> acc) ->
-    -- | Make result of the target function
-    (acc -> r0 -> r) ->
+    -- | Create result of the `func` function using accumulator and the result of the function to transform
+    (acc -> resultOrig -> result) ->
     -- | Accumulator
     acc ->
-    -- | The original function
-    ConstructFunction args r0 ->
+    -- | The function to transform
+    ConstructFunction args resultOrig ->
     -- | The new function
-    f
+    func
 
   -- | Create a new function
   --
@@ -58,36 +59,36 @@ class
     -- | Combine arguments with accumulator
     (forall a. argC a => acc -> a -> acc) ->
     -- | Make result of the function
-    (acc -> r) ->
+    (acc -> result) ->
     -- | Accumulator
     acc ->
-    f
+    func
 
 -- | Extract list of arguments from a function.
-type family FunctionArgs f :: [Type] where
-  FunctionArgs (a -> f) = a : FunctionArgs f
+type family FunctionArgs func :: [Type] where
+  FunctionArgs (a -> func) = a : FunctionArgs func
   FunctionArgs x = '[]
 
 -- | Extract the type of function result from a function.
-type family FunctionResult f :: Type where
-  FunctionResult (a -> f) = FunctionResult f
+type family FunctionResult func :: Type where
+  FunctionResult (a -> func) = FunctionResult func
   FunctionResult x = x
 
 -- | Given the types of functions arguments and result make a type of a function.
-type family ConstructFunction (args :: [Type]) (r :: Type) where
-  ConstructFunction '[] r = r
-  ConstructFunction (a : as) r = a -> ConstructFunction as r
+type family ConstructFunction (args :: [Type]) (result :: Type) where
+  ConstructFunction '[] result = result
+  ConstructFunction (a : args) result = a -> ConstructFunction args result
 
 instance
-  ('[] ~ FunctionArgs r, r ~ FunctionResult r) =>
-  Function argC r '[] r
+  ('[] ~ FunctionArgs result, result ~ FunctionResult result) =>
+  Function result '[] result argC
   where
   transformFunction _ _ fr acc r = fr acc r
   createFunction _ _ fr r = fr r
 
 instance
-  (Function argC f args r, argC a) =>
-  Function argC (a -> f) (a : args) r
+  (Function func args result argC, argC a) =>
+  Function (a -> func) (a : args) result argC
   where
   transformFunction pArgC fa fr acc f = \a -> transformFunction pArgC fa fr (fa acc a) (f a)
   createFunction pArgC fa fr acc = createFunction pArgC fa fr . fa acc
@@ -100,10 +101,13 @@ instance EmptyConstraint a
 --
 -- >>> (show `composeN` \a b c -> (a + b + c :: Int)) 1 2 3
 -- "6"
-composeN :: (Function EmptyConstraint f args a, Function EmptyConstraint g args b) => (a -> b) -> f -> g
+composeN :: (Function f args a EmptyConstraint, Function g args b EmptyConstraint) => (a -> b) -> f -> g
 composeN f = transformFunction (undefined :: p EmptyConstraint) const (\_ r -> f r) ()
 
 -- | Combine constraints
 class (f x, g x) => (&) f g (x :: k)
 
 instance (f x, g x) => (&) f g x
+
+mappendN :: forall r f args . (Function f args r ((~) r), Monoid r) => f
+mappendN = createFunction (undefined :: proxy ((~) r)) mappend id mempty

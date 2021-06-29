@@ -147,7 +147,7 @@ instance Exception MockFailure
 --   ]
 -- @
 makeMock ::
-  (Function Typeable f args (m x), Typeable f, Typeable x, MonadIO m) =>
+  (Function f args (m x) Typeable, Typeable f, Typeable x, MonadIO m) =>
   String ->
   f ->
   IO Mock
@@ -159,7 +159,7 @@ makeMock key f = do
 -- In combination with `asTypeOf` it lets you omit the type annotation.
 --
 -- > makeMock "getSomething" (constN "something" `asTypeOf` getSomething)
-constN :: Function EmptyConstraint f args a => a -> f
+constN :: Function f args a EmptyConstraint => a -> f
 constN a = createFunction (Proxy :: Proxy EmptyConstraint) const (const a) ()
 
 -- | A helper function to lookup the function. Likely you want to write a wrapper
@@ -184,7 +184,7 @@ lookupMockFunction conf key = case lookupMockTyped conf key (Proxy :: Proxy f) o
   Nothing -> Nothing
 
 recordArgs ::
-  (Typeable x, MonadIO m, Function Typeable f args (m x)) =>
+  (Typeable x, MonadIO m, Function f args (m x) Typeable) =>
   IORef [ActualCallRecord] ->
   f ->
   f
@@ -266,7 +266,7 @@ instance Show ExpectedArg where
 -- expectCall "email@example.com" True
 -- @
 expectCall ::
-  (Function (Show & Eq & Typeable) f args ExpectedCallRecord) =>
+  (Function f args ExpectedCallRecord (Show & Eq & Typeable)) =>
   f
 expectCall = createFunction (Proxy :: Proxy (Show & Eq & Typeable)) fa fr []
   where
@@ -410,7 +410,7 @@ unMockMonadIO5 f = unMockMonadIO4 . f
 -- If the caller is in a polymorphic monad, use one of the @unMockMonadION@ instead.
 fromMockMonadIO ::
   forall m x args f f'.
-  (MonadIO m, Function EmptyConstraint f args (MockMonadIO x), Function EmptyConstraint f' args (m x)) =>
+  (MonadIO m, Function f args (MockMonadIO x) EmptyConstraint, Function f' args (m x) EmptyConstraint) =>
   f ->
   f'
 fromMockMonadIO = composeN unMockMonadIO
