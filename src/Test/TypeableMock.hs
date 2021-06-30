@@ -146,6 +146,15 @@ instance Exception MockFailure
 --   , makeMock "print" (const $ pure () :: String -> IO ())
 --   ]
 -- @
+--
+-- For mocking functions with many arguments it is convenient to use `constN` and `asTypeOf`.
+-- Using `asTypeOf` lets you omit the type annotation. These definitions create the same mock:
+--
+-- @
+-- makeMock "someAction" ((\\_ _ _ -> pure "result") :: Arg1 -> Arg2 -> Arg3 -> SomeMonad ())
+-- makeMock "someAction" ('constN' $ pure "result" :: Arg1 -> Arg2 -> Arg3 -> SomeMonad ())
+-- makeMock "someAction" ('constN' $ pure "result" \`'asTypeOf'\` someAction)
+-- @
 makeMock ::
   (Function f args (m x) Typeable, Typeable f, Typeable x, MonadIO m) =>
   String ->
@@ -154,13 +163,6 @@ makeMock ::
 makeMock key f = do
   actualCallRecord <- newIORef []
   pure $ Mock key actualCallRecord (`recordArgs` f)
-
--- | Constant function for an arbitrary number of arguments.
--- In combination with `asTypeOf` it lets you omit the type annotation.
---
--- > makeMock "getSomething" (constN "something" `asTypeOf` getSomething)
-constN :: Function f args a EmptyConstraint => a -> f
-constN a = createFunction (Proxy :: Proxy EmptyConstraint) const (const a) ()
 
 -- | A helper function to lookup the function. Likely you want to write a wrapper
 -- that retrieves the @MockConfig@ from the environment.

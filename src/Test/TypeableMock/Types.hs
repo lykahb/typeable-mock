@@ -17,10 +17,12 @@ module Test.TypeableMock.Types
     EmptyConstraint,
     type (&),
     composeN,
+    constN,
+    mappendN,
   )
 where
 
-import Data.Kind (Type, Constraint)
+import Data.Kind (Constraint, Type)
 
 -- | Toolkit for creating and transforming functions with a variable number of arguments.
 -- Its parameters are function, list of its arguments, its result, and `argC` that constraints all arguments of the function.
@@ -30,7 +32,7 @@ class
     | args result -> func,
       func args -> result
   where
-  -- | Create a function with the same arguments as given one but may have a different result. 
+  -- | Create a function with the same arguments as given one but may have a different result.
   transformFunction ::
     -- | Required for unambiguous choice of Function instance
     proxy argC ->
@@ -97,17 +99,32 @@ class EmptyConstraint a
 
 instance EmptyConstraint a
 
--- | Function composition for any number of arguments
+-- | Combine constraints
+class (f x, g x) => (&) f g (x :: k)
+
+instance (f x, g x) => (&) f g x
+
+-- | Function composition for an arbitrary number of arguments.
 --
 -- >>> (show `composeN` \a b c -> (a + b + c :: Int)) 1 2 3
 -- "6"
 composeN :: (Function f args a EmptyConstraint, Function g args b EmptyConstraint) => (a -> b) -> f -> g
 composeN f = transformFunction (undefined :: p EmptyConstraint) const (\_ r -> f r) ()
 
--- | Combine constraints
-class (f x, g x) => (&) f g (x :: k)
+-- | Constant function for an arbitrary number of arguments.
+--
+-- @
+-- let const2 = constN :: x -> a -> b -> x
+-- @
+--
+-- >>> zipWith3 (constN 1) [1..10] [1..5] ["a", "b", "c"] :: [Int]
+-- [1,1,1]
+constN :: Function f args a EmptyConstraint => a -> f
+constN a = createFunction (undefined :: p EmptyConstraint) const (const a) ()
 
-instance (f x, g x) => (&) f g x
-
-mappendN :: forall r f args . (Function f args r ((~) r), Monoid r) => f
+-- | Append multiple monoid values. It is similar to `mconcat` but takes the values as arguments rather than list elements.
+--
+-- >>> mappendN [1, 2] [3] [4, 5] :: [Int]
+-- [1,2,3,4,5]
+mappendN :: forall r f args. (Function f args r ((~) r), Monoid r) => f
 mappendN = createFunction (undefined :: proxy ((~) r)) mappend id mempty
