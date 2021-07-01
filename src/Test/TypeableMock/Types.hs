@@ -10,12 +10,17 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
 
 module Test.TypeableMock.Types
-  ( Function (..),
+  ( -- * Decomposition and creation of functions
+    Function (..),
     FunctionArgs,
     FunctionResult,
     ConstructFunction,
+
+    -- * Helper classes for argument constraints
     EmptyConstraint,
     type (&),
+
+    -- * Examples
     composeN,
     constN,
     mappendN,
@@ -25,7 +30,8 @@ where
 import Data.Kind (Constraint, Type)
 
 -- | Toolkit for creating and transforming functions with a variable number of arguments.
--- Its parameters are function, list of its arguments, its result, and `argC` that constraints all arguments of the function.
+-- Its parameters are function, list of its arguments, its result, and `argC`
+-- that constraints all arguments of the function.
 class
   (args ~ FunctionArgs func, result ~ FunctionResult func, ConstructFunction args result ~ func) =>
   Function func args result (argC :: Type -> Constraint)
