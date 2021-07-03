@@ -1,7 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators #-}
-
 module Test.TypeableMock
   ( -- * Types
     Mock (..),
@@ -48,14 +44,15 @@ import Control.Applicative (Alternative ((<|>)))
 import Control.Exception (Exception, throwIO)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.CallStack (HasCallStack, SrcLoc, callStack)
+import Data.Function.Variadic
+import Data.Function.Variadic.Utils (composeN, constN)
 import Data.IORef (IORef, modifyIORef, newIORef, readIORef, writeIORef)
 import Data.List (foldl', intercalate)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Typeable (Proxy (Proxy), TypeRep, Typeable, cast, eqT, typeOf, typeRep, (:~:) (..))
-import Test.TypeableMock.Types
-import Prelude
+
 
 data ActualCallRecord = ActualCallRecord [ActualArg] ActualArg
 

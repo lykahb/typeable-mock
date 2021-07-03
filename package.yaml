@@ -17,23 +17,19 @@ dependencies:
 - base >= 4.7 && < 5
 - containers
 - call-stack >= 0.2.0
+- variadic-function >= 0.1.0.0
 
 default-extensions:
-- DerivingStrategies
+- FlexibleContexts
 - GADTs
-- GeneralizedNewtypeDeriving
 - LambdaCase
 - RankNTypes
-- FlexibleInstances
-- MultiParamTypeClasses
-- FunctionalDependencies
 - RecordWildCards
+- ScopedTypeVariables
+- TypeOperators
 
 ghc-options:
 - -Wall
-# - -Wno-missing-import-lists
-# - -Wno-prepositive-qualified-module
-# - -Wno-unsafe
 
 library:
   source-dirs: src

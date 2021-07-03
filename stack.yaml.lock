@@ -3,7 +3,14 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/lock_files
 
-packages: []
+packages:
+- completed:
+    hackage: variadic-function-0.1.0.1@sha256:d5baabfed733d2d7118aa23a59cbbf6cbea0e9479160b8565e04fef5c0c1c17a,1921
+    pantry-tree:
+      size: 460
+      sha256: 3127463ddf136b802e8d35d39f23e7cd65519884db91166c324e86662c21761c
+  original:
+    hackage: variadic-function-0.1.0.1
 snapshots:
 - completed:
     size: 567037
