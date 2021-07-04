@@ -17,7 +17,7 @@ dependencies:
 - base >= 4.7 && < 5
 - containers
 - call-stack >= 0.2.0
-- variadic-function >= 0.1.0.0
+- variadic-function >= 0.1.0.0 && < 0.2
 
 default-extensions:
 - FlexibleContexts

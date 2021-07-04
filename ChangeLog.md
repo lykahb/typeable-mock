@@ -1,3 +1,4 @@
 # Changelog for typeable-mock
 
-## Unreleased changes
+## 0.1.0.0
+- The first release
