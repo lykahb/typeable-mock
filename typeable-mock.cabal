@@ -44,7 +44,7 @@ library
       base >=4.7 && <5
     , call-stack >=0.2.0
     , containers
-    , variadic-function >=0.1.0.0
+    , variadic-function >=0.1.0.0 && <0.2
   default-language: Haskell2010
 
 test-suite typeable-mock-test
@@ -70,5 +70,5 @@ test-suite typeable-mock-test
     , containers
     , hspec
     , typeable-mock
-    , variadic-function >=0.1.0.0
+    , variadic-function >=0.1.0.0 && <0.2
   default-language: Haskell2010
