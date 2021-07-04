@@ -1,4 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE TypeApplications #-}
+
 module Test.TypeableMock
   ( -- * Mocks and mock configuration
     Mock (..),
@@ -20,6 +22,7 @@ module Test.TypeableMock
     MockFailureReason (..),
     lookupMock,
     lookupMockTyped,
+    useMockConvert,
     assertHasCalls,
     assertNotCalled,
     assertAnyCall,
@@ -220,7 +223,7 @@ lookupMock MockConfig {..} key = case Map.lookup key mcStorage of
     _ -> error $ "lookupMock: There are " <> show (Map.size tMap) <> " mocks under the name \"" <> key <> "\". Use lookupMockTyped to disambiguate."
 
 -- | Find a mock by name and type.
-lookupMockTyped :: forall t . (HasCallStack, Typeable t) => MockConfig -> String -> Maybe Mock
+lookupMockTyped :: forall t. (HasCallStack, Typeable t) => MockConfig -> String -> Maybe Mock
 lookupMockTyped MockConfig {..} key = do
   let tMap = Map.lookup key mcStorage
   case tMap >>= Map.lookup tRep of
@@ -239,6 +242,25 @@ lookupMockTyped MockConfig {..} key = do
   where
     tRep = typeRep (Proxy :: Proxy t)
 
+-- | Build helpers using mocks in your application with this.
+-- The conversion is for the case when the type of a function stored in mock
+-- does not match the mocked function. Usually this is a case for a newtype
+-- wrapper over a polymorphic monad like MockMonadIO.
+useMockConvert ::
+  (Monad m, Typeable mock) =>
+  -- | Get mock config from the context
+  -- | Convert the mock function. Usually it is @id@ or unwrapping function for an existential type like @MockMonadIO@.
+  m MockConfig ->
+  (mock -> f) ->
+  -- | Key of the mock
+  String ->
+  -- | The function that is being mocked
+  f ->
+  m f
+useMockConvert getMockConfig conv key f = do
+  mockConfig <- getMockConfig
+  pure $ maybe f conv (lookupMockFunction mockConfig key)
+
 addMocksToConfig :: MockConfig -> [Mock] -> MockConfig
 addMocksToConfig conf mocks = conf {mcStorage = mockMap}
   where
@@ -251,7 +273,7 @@ addMocksToConfig conf mocks = conf {mcStorage = mockMap}
 
 -- | Description of what value for mock call the assertions expect
 data ExpectedVal
-  = AnyArg
+  = AnyVal
   | forall a. (Typeable a, Show a, Eq a) => ExpectedVal a
   | forall a. (Typeable a, Show a) => PredicateVal (a -> Bool)
 
@@ -261,7 +283,7 @@ instance Eq ExpectedVal where
 data ExpectedCallRecord = ExpectedCallRecord [ExpectedVal] ExpectedVal
 
 instance Show ExpectedVal where
-  show AnyArg = "AnyArg"
+  show AnyVal = "AnyVal"
   show (ExpectedVal a) = show a
   show (PredicateVal p) = "PredicateVal p :: " <> show (typeOf p)
 
@@ -280,7 +302,7 @@ expectCall = createFunction (Proxy :: Proxy (Show & Eq & Typeable)) fa fr []
     fa args arg = (: args) $ case cast arg of
       Just arg' -> arg'
       Nothing -> ExpectedVal arg
-    fr args = ExpectedCallRecord (reverse args) AnyArg
+    fr args = ExpectedCallRecord (reverse args) AnyVal
 
 -- | Assert that mock returned the given result.
 -- Sometimes it is more convenient than checking arguments.
@@ -302,7 +324,7 @@ checkCallRecord actCall@(ActualCallRecord actArgs actRes) expCall@(ExpectedCallR
     resFailure = matchArgs actRes expRes
 
 matchArgs :: ActualVal -> ExpectedVal -> Maybe MockFailureReason
-matchArgs _ AnyArg = Nothing
+matchArgs _ AnyVal = Nothing
 matchArgs (ActualVal actual) (ExpectedVal expected) =
   case cast actual of
     Just actual' | expected == actual' -> Nothing

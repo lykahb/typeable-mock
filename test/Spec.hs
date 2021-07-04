@@ -1,5 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO (..))
@@ -10,10 +9,10 @@ import Test.TypeableMock
 
 main :: IO ()
 main = hspec $ do
-  let withMock :: Typeable a => MockConfig -> a -> String -> a
-      withMock conf f key = fromMaybe f (lookupMockFunction conf key)
+  let withMock :: Typeable f => MockConfig -> String -> f -> f
+      withMock conf key f = fromMaybe f (lookupMockFunction conf key)
       printWithMock :: (Show a, Typeable a) => MockConfig -> a -> IO ()
-      printWithMock conf = withMock conf print "print"
+      printWithMock conf = withMock conf "print" print
   printStringMock <- runIO $ makeMock "print" (const $ pure () :: String -> IO ())
 
   let mockConf :: MockConfig
@@ -29,7 +28,7 @@ main = hspec $ do
         it "mocks a multiple arguments function" $ do
           let print2 :: Int -> Int -> IO ()
               print2 a b = print (a, b)
-              print2WithMock conf = withMock conf print2 "print2" 1 2
+              print2WithMock conf = withMock conf "print2" print2 1 2
 
           print2Mock <- makeMock "print2" ((\_ _ -> pure ()) :: Int -> Int -> IO ())
           print2WithMock $ defaultMockConfig `addMocksToConfig` [print2Mock]
@@ -95,9 +94,9 @@ main = hspec $ do
           doubleMock <- makeMock "double" ((\a -> pure (a * 2)) `asTypeOf` doubleFunc)
           let mockConf' = mockConf `addMocksToConfig` [doubleMock]
 
-          void $ withMock mockConf' doubleFunc "double" 5
-          assertHasCalls [expectCall AnyArg `withResult` (10 :: Int)] doubleMock
-          assertHasCalls [expectCall AnyArg `withResult` (11 :: Int)] doubleMock
+          void $ withMock mockConf' "double" doubleFunc 5
+          assertHasCalls [expectCall AnyVal `withResult` (10 :: Int)] doubleMock
+          assertHasCalls [expectCall AnyVal `withResult` (11 :: Int)] doubleMock
             `shouldThrow` \case
               MockFailure {mfReason = MockFailureArgumentValueMismatch {}} -> True
               _ -> False
@@ -154,9 +153,9 @@ main = hspec $ do
             MockFailure {mfReason = MockFailureArgumentPredicateFailure {}} -> True
             _ -> False
 
-      it "ignores expected argument when it is AnyArg" $ do
+      it "ignores expected argument when it is AnyVal" $ do
         printWithMock mockConf "one"
-        assertHasCalls [expectCall AnyArg] printStringMock
+        assertHasCalls [expectCall AnyVal] printStringMock
 
     describe "Retrieving mocks" $ do
       describe "lookupMock" $ do
@@ -190,7 +189,7 @@ main = hspec $ do
 
         it "fails when mcShouldFailOnNotFound and there are no mocks with the given name " $ do
           let mockConf' = mockConf {mcShouldFailOnNotFound = \_ _ -> True}
-          withMock mockConf' print "printDoesNotExist" ()
+          withMock mockConf' "printDoesNotExist" print ()
             `shouldThrow` errorCall "lookupMockTyped: cannot find mock printDoesNotExist :: () -> IO (). There are no mocks under this name."
 
         it "fails when mcShouldFailOnNotFound and there are other mocks with the same name" $ do
