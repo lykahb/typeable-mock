@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 module Test.TypeableMock
   ( -- * Mocks and mock configuration
     Mock (..),
@@ -178,7 +179,7 @@ makeMock key f = do
 -- >
 -- > withMock "getSomething" getSomething >>= \f -> f someArg
 lookupMockFunction :: forall f. Typeable f => MockConfig -> String -> Maybe f
-lookupMockFunction conf key = case lookupMockTyped conf key (Proxy :: Proxy f) of
+lookupMockFunction conf key = case lookupMockTyped @f conf key of
   Just Mock {..} -> case cast (mockFunction mockCallRecord) of
     Just val -> Just val
     Nothing ->
@@ -219,8 +220,8 @@ lookupMock MockConfig {..} key = case Map.lookup key mcStorage of
     _ -> error $ "lookupMock: There are " <> show (Map.size tMap) <> " mocks under the name \"" <> key <> "\". Use lookupMockTyped to disambiguate."
 
 -- | Find a mock by name and type.
-lookupMockTyped :: forall t proxy. (HasCallStack, Typeable t) => MockConfig -> String -> proxy t -> Maybe Mock
-lookupMockTyped MockConfig {..} key proxy = do
+lookupMockTyped :: forall t . (HasCallStack, Typeable t) => MockConfig -> String -> Maybe Mock
+lookupMockTyped MockConfig {..} key = do
   let tMap = Map.lookup key mcStorage
   case tMap >>= Map.lookup tRep of
     Just mock -> Just mock
@@ -236,7 +237,7 @@ lookupMockTyped MockConfig {..} key proxy = do
             <> unlines (map show $ Map.elems tMap')
     Nothing -> Nothing
   where
-    tRep = typeRep proxy
+    tRep = typeRep (Proxy :: Proxy t)
 
 addMocksToConfig :: MockConfig -> [Mock] -> MockConfig
 addMocksToConfig conf mocks = conf {mcStorage = mockMap}

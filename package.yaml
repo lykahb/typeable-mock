@@ -26,6 +26,7 @@ default-extensions:
 - RankNTypes
 - RecordWildCards
 - ScopedTypeVariables
+- TypeApplications
 - TypeOperators
 
 ghc-options:

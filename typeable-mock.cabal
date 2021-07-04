@@ -37,6 +37,7 @@ library
       RankNTypes
       RecordWildCards
       ScopedTypeVariables
+      TypeApplications
       TypeOperators
   ghc-options: -Wall
   build-depends:
@@ -60,6 +61,7 @@ test-suite typeable-mock-test
       RankNTypes
       RecordWildCards
       ScopedTypeVariables
+      TypeApplications
       TypeOperators
   ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
   build-depends:

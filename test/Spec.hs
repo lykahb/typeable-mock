@@ -185,7 +185,7 @@ main = hspec $ do
         it "finds mock" $ do
           printIntMock <- makeMock "print" ((\_ -> pure ()) :: Int -> IO ())
           let mockConf' = mockConf `addMocksToConfig` [printIntMock]
-          let Just mock = lookupMockTyped mockConf' "print" (undefined :: p (Int -> IO ()))
+          let Just mock = lookupMockTyped @(Int -> IO ()) mockConf' "print"
           show mock `shouldBe` show printIntMock
 
         it "fails when mcShouldFailOnNotFound and there are no mocks with the given name " $ do
@@ -195,15 +195,15 @@ main = hspec $ do
 
         it "fails when mcShouldFailOnNotFound and there are other mocks with the same name" $ do
           let mockConf' = mockConf {mcShouldFailOnNotFound = \_ _ -> True}
-          (lookupMockTyped mockConf' "print" (undefined :: p (Int -> IO ())) `seq` pure ())
+          (lookupMockTyped @(Int -> IO ()) mockConf' "print" `seq` pure ())
             `shouldThrow` errorCall "lookupMockTyped: cannot find mock print :: Int -> IO (). There are mocks with other types under the same name:\nMock (print :: [Char] -> IO ())\n"
 
         it "returns Nothing when there are no mocks with the given name" $ do
-          lookupMockTyped mockConf "noSuchMock" (undefined :: p (Int -> IO ()))
+          lookupMockTyped @(Int -> IO ()) mockConf "noSuchMock"
             `shouldSatisfy` isNothing
 
         it "returns Nothing when there are other mocks with the same name" $ do
-          lookupMockTyped mockConf "print" (undefined :: p (Int -> IO ()))
+          lookupMockTyped @(Int -> IO ()) mockConf "print"
             `shouldSatisfy` isNothing
 
     describe "Display" $ do
