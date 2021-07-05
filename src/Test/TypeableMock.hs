@@ -54,7 +54,7 @@ import Data.CallStack (HasCallStack, SrcLoc (..), callStack)
 import Data.Function.Variadic
 import Data.Function.Variadic.Utils (composeN, constN)
 import Data.IORef (IORef, modifyIORef, newIORef, readIORef, writeIORef)
-import Data.List (foldl', intercalate)
+import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
@@ -118,7 +118,7 @@ data MockFailureReason
   | MockFailureNotCalled ExpectedCallRecord
 
 instance Show MockFailureReason where
-  show reason = intercalate "\n" $ case reason of
+  show reason = unlines $ case reason of
     MockFailureArgumentCountMismatch (ActualCallRecord actArgs _) (ExpectedCallRecord expArgs _) ->
       ["Number of arguments does not match:", "expected: " ++ show (length expArgs), "but got: " ++ show (length actArgs)]
     MockFailureArgumentTypeMismatch actual expected ->
@@ -134,7 +134,7 @@ instance Show MockFailureReason where
 
 instance Show MockFailure where
   show MockFailure {..} =
-    intercalate "\n" $
+    unlines $
       ["Assertion failed for " <> show mfMock, show mfReason] <> maybe [] (\loc -> ["at:", prettyLocation loc]) mfLocation
     where
       prettyLocation SrcLoc {..} = srcLocFile ++ ":" ++ show srcLocStartLine ++ ":" ++ show srcLocStartCol ++ " in " ++ srcLocPackage ++ ":" ++ srcLocModule
@@ -368,7 +368,7 @@ assertNotCalled = assertHasCalls []
 -- | The expected call record matches the actual one. Note that it throws
 -- error for the logic bugs when a mismatch is caused by wrong number
 -- of arguments or wrong types.
-callMatches :: ActualCallRecord -> ExpectedCallRecord -> Bool
+callMatches :: HasCallStack => ActualCallRecord -> ExpectedCallRecord -> Bool
 callMatches actCall expCall = case checkCallRecord actCall expCall of
   Nothing -> True
   Just MockFailureArgumentValueMismatch {} -> False
@@ -376,7 +376,7 @@ callMatches actCall expCall = case checkCallRecord actCall expCall of
   Just reason -> error $ "callMatches: invalid arguments\n" <> show reason
 
 -- | Assert that the expected call happened at least once.
-assertAnyCall :: ExpectedCallRecord -> Mock -> IO ()
+assertAnyCall :: HasCallStack => ExpectedCallRecord -> Mock -> IO ()
 assertAnyCall expCall mock = do
   actualCalls <- getCalls mock
   unless (any (\actCall -> isNothing $ checkCallRecord actCall expCall) actualCalls) $ do

@@ -2,6 +2,7 @@
 
 import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO (..))
+import Data.List (isInfixOf)
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Typeable (Typeable)
 import Test.Hspec
@@ -157,6 +158,10 @@ main = hspec $ do
         printWithMock mockConf "one"
         assertHasCalls [expectCall AnyVal] printStringMock
 
+      it "callMatches fails on incompatible arguments" $ do
+        (callMatches (ActualCallRecord [] (ActualVal ())) (ExpectedCallRecord [] (ExpectedVal True)) `seq` pure ())
+          `shouldThrow` anyErrorCall
+
     describe "Retrieving mocks" $ do
       describe "lookupMock" $ do
         it "finds mock" $ do
@@ -205,7 +210,12 @@ main = hspec $ do
           lookupMockTyped @(Int -> IO ()) mockConf "print"
             `shouldSatisfy` isNothing
 
-    describe "Display" $ do
-      it "shows Mock correctly" $ do
+    describe "Messages" $ do
+      it "shows Mock" $ do
         mock <- makeMock "print" (const $ pure () :: Int -> IO ())
         show mock `shouldBe` "Mock (print :: Int -> IO ())"
+
+      it "shows MockFailure" $ do
+        printWithMock mockConf "one"
+        assertHasCalls [expectCall "two"] printStringMock `shouldThrow` \(e :: MockFailure) ->
+          "test/Spec.hs" `isInfixOf` show e

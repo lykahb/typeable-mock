@@ -5,8 +5,10 @@ cabal-version: 1.12
 -- see: https://github.com/sol/hpack
 
 name:           typeable-mock
-version:        0.1.0.0
+version:        0.1.0.1
+synopsis:       Mock functions and expressions anywhere.
 description:    Please see the README on GitHub at <https://github.com/lykahb/typeable-mock#readme>
+category:       Testing
 homepage:       https://github.com/lykahb/typeable-mock#readme
 bug-reports:    https://github.com/lykahb/typeable-mock/issues
 author:         Boris Lykah

@@ -1,5 +1,5 @@
 name:                typeable-mock
-version:             0.1.0.0
+version:             0.1.0.1
 github:              "lykahb/typeable-mock"
 license:             BSD3
 author:              "Boris Lykah"
@@ -10,6 +10,8 @@ extra-source-files:
 - README.md
 - ChangeLog.md
 
+synopsis:            Mock functions and expressions anywhere.
+category:            Testing
 
 description:         Please see the README on GitHub at <https://github.com/lykahb/typeable-mock#readme>
 
